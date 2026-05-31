@@ -5,7 +5,9 @@
       "Bash(python3 -m venv .venv)",
       "Bash(.venv/bin/pip install *)",
       "Bash(.venv/bin/python *)",
-      "Bash(DATABASE_URL=\"sqlite:///$PWD/smoke.db\" STORAGE_DIR=\"$PWD/storage\" .venv/bin/python *)"
+      "Bash(DATABASE_URL=\"sqlite:///$PWD/smoke.db\" STORAGE_DIR=\"$PWD/storage\" .venv/bin/python *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(DATABASE_URL=sqlite:///__TRACKED_VAR__/smoke.db .venv/bin/python -)"
     ]
   }
 }

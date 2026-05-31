@@ -10,6 +10,8 @@ from typing import Dict, List
 from app.rules.base import CheckTemplate
 from app.rules.contract import CONTRACT_RIGID_RULES
 from app.rules.contract_soft import CONTRACT_SOFT_RULES
+from app.rules.institution import INSTITUTION_RIGID_RULES
+from app.rules.institution_soft import INSTITUTION_SOFT_RULES
 
 _TEMPLATES: Dict[str, CheckTemplate] = {}
 
@@ -27,9 +29,17 @@ _register(CheckTemplate(
     soft_rules=list(CONTRACT_SOFT_RULES),
 ))
 
-# —— Phase 2 占位（规则后续补全）——
+# —— Phase 2：内部制度 ——
+_register(CheckTemplate(
+    key="institution",
+    name="制度合规检查模板",
+    applies_to="内部制度",
+    rigid_rules=list(INSTITUTION_RIGID_RULES),
+    soft_rules=list(INSTITUTION_SOFT_RULES),
+))
+
+# —— 其余 Phase 2 占位（规则后续补全）——
 for key, name, applies in [
-    ("institution", "制度合规检查模板", "内部制度"),
     ("procurement", "招采三合一检查模板", "采购招标"),
     ("internal_control", "内控报告检查模板", "内控报告"),
     ("finance_final", "财务+决算联合检查模板", "财务报告"),
