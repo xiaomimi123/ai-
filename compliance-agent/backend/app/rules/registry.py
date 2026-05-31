@@ -12,6 +12,8 @@ from app.rules.contract import CONTRACT_RIGID_RULES
 from app.rules.contract_soft import CONTRACT_SOFT_RULES
 from app.rules.institution import INSTITUTION_RIGID_RULES
 from app.rules.institution_soft import INSTITUTION_SOFT_RULES
+from app.rules.procurement import PROCUREMENT_RIGID_RULES
+from app.rules.procurement_soft import PROCUREMENT_SOFT_RULES
 
 _TEMPLATES: Dict[str, CheckTemplate] = {}
 
@@ -38,9 +40,17 @@ _register(CheckTemplate(
     soft_rules=list(INSTITUTION_SOFT_RULES),
 ))
 
+# —— Phase 2：招采三合一 ——
+_register(CheckTemplate(
+    key="procurement",
+    name="招采三合一检查模板",
+    applies_to="采购招标",
+    rigid_rules=list(PROCUREMENT_RIGID_RULES),
+    soft_rules=list(PROCUREMENT_SOFT_RULES),
+))
+
 # —— 其余 Phase 2 占位（规则后续补全）——
 for key, name, applies in [
-    ("procurement", "招采三合一检查模板", "采购招标"),
     ("internal_control", "内控报告检查模板", "内控报告"),
     ("finance_final", "财务+决算联合检查模板", "财务报告"),
     ("asset", "资产报告检查模板", "国有资产报告"),

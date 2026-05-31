@@ -3,7 +3,10 @@ import io
 
 import pytest
 
-from tests.samples import BAD_CONTRACT, BAD_INSTITUTION, GOOD_CONTRACT, GOOD_INSTITUTION
+from tests.samples import (
+    BAD_BID, BAD_CONTRACT, BAD_EVAL, BAD_INSTITUTION, BAD_TENDER,
+    GOOD_BID, GOOD_CONTRACT, GOOD_EVAL, GOOD_INSTITUTION, GOOD_TENDER,
+)
 
 
 @pytest.fixture(scope="module")
@@ -18,9 +21,10 @@ def client():
         yield c
 
 
-def _upload(client, text, name):
+def _upload(client, text, name, category="合同", subcategory=""):
     files = {"file": (name, io.BytesIO(text.encode("utf-8")), "text/plain")}
-    resp = client.post("/api/documents", files=files, data={"category": "合同"})
+    data = {"category": category, "subcategory": subcategory}
+    resp = client.post("/api/documents", files=files, data=data)
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
 
@@ -31,15 +35,17 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 
-def test_templates_lists_contract_and_institution(client):
+def test_templates_lists_all_phase2(client):
     r = client.get("/api/templates")
     templates = {t["key"]: t for t in r.json()}
     assert "contract" in templates
     assert templates["contract"]["ready"] is True
     assert templates["contract"]["rigid_rules"] >= 5
-    # Phase 2：内部制度模板已就绪
+    # Phase 2：内部制度 + 招采模板已就绪
     assert templates["institution"]["ready"] is True
     assert templates["institution"]["rigid_rules"] >= 6
+    assert templates["procurement"]["ready"] is True
+    assert templates["procurement"]["rigid_rules"] >= 13
 
 
 def test_institution_check_flags_and_passes(client):
@@ -55,6 +61,41 @@ def test_institution_check_flags_and_passes(client):
     r2 = client.post("/api/checks", json={"document_id": good_id, "template_key": "institution"})
     good_rigid = [i for i in r2.json()["issues"] if i["source"] == "rigid"]
     assert good_rigid == [], [i["description"] for i in good_rigid]
+
+
+def test_procurement_tender_flags_and_passes(client):
+    # 问题招标：缺编号/预算/截止时间/资格要求/评标办法
+    bad_id = _upload(client, BAD_TENDER, "bad_tender.txt", category="采购招标", subcategory="招标")
+    r = client.post("/api/checks", json={"document_id": bad_id, "template_key": "procurement"})
+    assert r.status_code == 200, r.text
+    rule_ids = {i["rule_id"] for i in r.json()["issues"]}
+    assert "proc.tender.number" in rule_ids
+    assert "proc.tender.budget" in rule_ids
+    assert "proc.tender.deadline" in rule_ids
+
+    # 合规招标：无刚性问题
+    good_id = _upload(client, GOOD_TENDER, "good_tender.txt", category="采购招标", subcategory="招标")
+    r2 = client.post("/api/checks", json={"document_id": good_id, "template_key": "procurement"})
+    rigid = [i for i in r2.json()["issues"] if i["source"] == "rigid"]
+    assert rigid == [], [i["description"] for i in rigid]
+
+
+def test_procurement_bid_flags(client):
+    bad_id = _upload(client, BAD_BID, "bad_bid.txt", category="采购招标", subcategory="投标")
+    r = client.post("/api/checks", json={"document_id": bad_id, "template_key": "procurement"})
+    rule_ids = {i["rule_id"] for i in r.json()["issues"]}
+    assert "proc.bid.price" in rule_ids
+    assert "proc.bid.validity" in rule_ids
+    assert "proc.bid.signature" in rule_ids
+
+
+def test_procurement_eval_flags(client):
+    bad_id = _upload(client, BAD_EVAL, "bad_eval.txt", category="采购招标", subcategory="评标")
+    r = client.post("/api/checks", json={"document_id": bad_id, "template_key": "procurement"})
+    rule_ids = {i["rule_id"] for i in r.json()["issues"]}
+    assert "proc.eval.committee" in rule_ids
+    assert "proc.eval.result" in rule_ids
+    assert "proc.eval.signature" in rule_ids
 
 
 def test_bad_contract_flags_issues(client):

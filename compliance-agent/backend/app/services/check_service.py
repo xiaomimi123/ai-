@@ -23,6 +23,9 @@ def run_check(db: Session, document: Document, template_key: str) -> CheckTask:
     try:
         parsed = parse(document.storage_path)
         parsed.metadata.setdefault("file_name", document.file_name)
+        # 子类供招采等模板按子类（招标/投标/评标）分流规则
+        if document.subcategory:
+            parsed.metadata.setdefault("subcategory", document.subcategory)
 
         # 柔性规则上下文：离线自动降级，不会因 LLM/向量库缺失而报错
         soft_ctx = LLMRagContext()
