@@ -14,6 +14,13 @@ from app.rules.institution import INSTITUTION_RIGID_RULES
 from app.rules.institution_soft import INSTITUTION_SOFT_RULES
 from app.rules.procurement import PROCUREMENT_RIGID_RULES
 from app.rules.procurement_soft import PROCUREMENT_SOFT_RULES
+from app.rules.internal_control import (
+    INTERNAL_CONTROL_RIGID_RULES,
+    INTERNAL_CONTROL_SOFT_RULES,
+)
+from app.rules.finance_final import FINANCE_FINAL_RIGID_RULES, FINANCE_FINAL_SOFT_RULES
+from app.rules.asset import ASSET_RIGID_RULES, ASSET_SOFT_RULES
+from app.rules.performance import PERFORMANCE_RIGID_RULES, PERFORMANCE_SOFT_RULES
 
 _TEMPLATES: Dict[str, CheckTemplate] = {}
 
@@ -49,14 +56,35 @@ _register(CheckTemplate(
     soft_rules=list(PROCUREMENT_SOFT_RULES),
 ))
 
-# —— 其余 Phase 2 占位（规则后续补全）——
-for key, name, applies in [
-    ("internal_control", "内控报告检查模板", "内控报告"),
-    ("finance_final", "财务+决算联合检查模板", "财务报告"),
-    ("asset", "资产报告检查模板", "国有资产报告"),
-    ("performance", "绩效评价报告检查模板", "绩效评价报告"),
-]:
-    _register(CheckTemplate(key=key, name=name, applies_to=applies))
+# —— Phase 2：内控报告 / 财务+决算 / 资产报告 / 绩效评价 ——
+_register(CheckTemplate(
+    key="internal_control",
+    name="内控报告检查模板",
+    applies_to="内控报告",
+    rigid_rules=list(INTERNAL_CONTROL_RIGID_RULES),
+    soft_rules=list(INTERNAL_CONTROL_SOFT_RULES),
+))
+_register(CheckTemplate(
+    key="finance_final",
+    name="财务+决算联合检查模板",
+    applies_to="财务报告",
+    rigid_rules=list(FINANCE_FINAL_RIGID_RULES),
+    soft_rules=list(FINANCE_FINAL_SOFT_RULES),
+))
+_register(CheckTemplate(
+    key="asset",
+    name="资产报告检查模板",
+    applies_to="国有资产报告",
+    rigid_rules=list(ASSET_RIGID_RULES),
+    soft_rules=list(ASSET_SOFT_RULES),
+))
+_register(CheckTemplate(
+    key="performance",
+    name="绩效评价报告检查模板",
+    applies_to="绩效评价报告",
+    rigid_rules=list(PERFORMANCE_RIGID_RULES),
+    soft_rules=list(PERFORMANCE_SOFT_RULES),
+))
 
 
 def get_template(key: str) -> CheckTemplate:

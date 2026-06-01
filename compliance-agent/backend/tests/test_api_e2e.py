@@ -5,9 +5,11 @@ import pytest
 
 from tests.samples import (
     BAD_BID, BAD_CONTRACT, BAD_EVAL, BAD_INSTITUTION, BAD_TENDER,
+    BAD_INTERNAL_CONTROL, BAD_FINANCE_FINAL, BAD_ASSET, BAD_PERFORMANCE,
     CHAIN_BAD_BID, CHAIN_BAD_CONTRACT, CHAIN_BAD_EVAL,
     CHAIN_GOOD_BID, CHAIN_GOOD_CONTRACT, CHAIN_GOOD_EVAL, CHAIN_GOOD_TENDER,
     GOOD_BID, GOOD_CONTRACT, GOOD_EVAL, GOOD_INSTITUTION, GOOD_TENDER,
+    GOOD_INTERNAL_CONTROL, GOOD_FINANCE_FINAL, GOOD_ASSET, GOOD_PERFORMANCE,
 )
 
 
@@ -48,6 +50,10 @@ def test_templates_lists_all_phase2(client):
     assert templates["institution"]["rigid_rules"] >= 6
     assert templates["procurement"]["ready"] is True
     assert templates["procurement"]["rigid_rules"] >= 13
+    # 全部 7 套模板已就绪
+    for key in ("internal_control", "finance_final", "asset", "performance"):
+        assert templates[key]["ready"] is True, key
+        assert templates[key]["rigid_rules"] >= 5, key
 
 
 def test_institution_check_flags_and_passes(client):
@@ -113,6 +119,27 @@ def test_bad_contract_flags_issues(client):
     assert "contract.number" in rule_ids
     assert "contract.seal" in rule_ids
     assert "contract.required_clauses" in rule_ids
+
+
+@pytest.mark.parametrize("template_key,good_text,bad_text,category", [
+    ("internal_control", GOOD_INTERNAL_CONTROL, BAD_INTERNAL_CONTROL, "内控报告"),
+    ("finance_final", GOOD_FINANCE_FINAL, BAD_FINANCE_FINAL, "财务报告"),
+    ("asset", GOOD_ASSET, BAD_ASSET, "国有资产报告"),
+    ("performance", GOOD_PERFORMANCE, BAD_PERFORMANCE, "绩效评价报告"),
+])
+def test_report_templates_end_to_end(client, template_key, good_text, bad_text, category):
+    # bad → 多条疑点
+    bad_id = _upload(client, bad_text, f"bad_{template_key}.txt", category=category)
+    r = client.post("/api/checks", json={"document_id": bad_id, "template_key": template_key})
+    assert r.status_code == 200, r.text
+    bad_rigid = [i for i in r.json()["issues"] if i["source"] == "rigid"]
+    assert len(bad_rigid) >= 3
+
+    # good → 0 条刚性疑点
+    good_id = _upload(client, good_text, f"good_{template_key}.txt", category=category)
+    r2 = client.post("/api/checks", json={"document_id": good_id, "template_key": template_key})
+    good_rigid = [i for i in r2.json()["issues"] if i["source"] == "rigid"]
+    assert good_rigid == [], (template_key, [i["description"] for i in good_rigid])
 
 
 def test_procurement_chain_flags_cross_file_issues(client):
