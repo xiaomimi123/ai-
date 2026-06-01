@@ -130,6 +130,13 @@
 
     <div class="nav-section" data-nav-group="knowledge">
       <div class="nav-section-label">知识库</div>
+      <button class="nav-link" data-route="regulations">
+        <span class="nav-link-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M3 2.5h7l3 3v8a1 1 0 01-1 1H3a1 1 0 01-1-1v-10a1 1 0 011-1z M10 2.5v3h3 M5 8h6 M5 10.5h6 M5 13h4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span> 法规库
+      </button>
       <button class="nav-link" data-route="indicators">
         <span class="nav-link-icon">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -347,6 +354,49 @@
       </div>
     </section>
 
+    <!-- 法规库 -->
+    <section id="page-regulations" class="page-section hidden">
+      <header class="page-header">
+        <div class="page-eyebrow">KNOWLEDGE</div>
+        <div class="page-header-row">
+          <div>
+            <h1 class="page-title">法规库</h1>
+            <p class="page-sub">上位法、评价办法、编报指南、地方法规等，AI 判断的法律依据来源。</p>
+          </div>
+          <button class="btn btn-primary" id="open-reg-upload">+ 上传法规</button>
+        </div>
+      </header>
+      <div class="page-body">
+        <div class="flex gap-3 mb-4" style="flex-wrap:wrap;align-items:center">
+          <input id="reg-search" class="form-input" placeholder="🔍 搜索标题、文号、发文机关..." style="max-width:320px" />
+          <select id="reg-filter-type" class="form-select" style="max-width:180px">
+            <option value="">全部类型</option>
+          </select>
+          <select id="reg-filter-region" class="form-select" style="max-width:140px">
+            <option value="">全部地区</option>
+          </select>
+          <span id="reg-count" class="text-sm text-muted" style="margin-left:auto"></span>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>标题</th>
+                <th>类型</th>
+                <th>地区</th>
+                <th>发文机关 · 文号</th>
+                <th>文件</th>
+                <th>索引</th>
+                <th>上传时间</th>
+                <th style="width:120px"></th>
+              </tr>
+            </thead>
+            <tbody id="regulations-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- 评价指标 -->
     <section id="page-indicators" class="page-section hidden">
       <header class="page-header">
@@ -363,9 +413,26 @@
         </div>
       </header>
       <div class="page-body">
+        <div class="flex gap-3 mb-4" style="flex-wrap:wrap;align-items:center">
+          <input id="ind-search" class="form-input" placeholder="🔍 搜索编号、名称、分类..." style="max-width:320px" />
+          <select id="ind-filter-level" class="form-select" style="max-width:160px">
+            <option value="">全部层级</option>
+            <option value="单位">单位评价</option>
+            <option value="部门">部门评价</option>
+          </select>
+          <select id="ind-filter-category" class="form-select" style="max-width:180px">
+            <option value="">全部业务分类</option>
+          </select>
+          <span id="ind-count" class="text-sm text-muted" style="margin-left:auto"></span>
+        </div>
         <div class="card" style="padding:0;overflow:hidden">
           <table class="table">
-            <thead><tr><th>指标编号</th><th>层级</th><th>分类</th><th>名称</th><th>满分</th><th>必需材料</th></tr></thead>
+            <thead>
+              <tr>
+                <th>指标编号</th><th>层级</th><th>分类</th><th>名称</th>
+                <th>满分</th><th>必需材料</th><th style="width:80px"></th>
+              </tr>
+            </thead>
             <tbody id="indicators-tbody"></tbody>
           </table>
         </div>
@@ -388,9 +455,31 @@
         </div>
       </header>
       <div class="page-body">
+        <div class="flex gap-3 mb-4" style="flex-wrap:wrap;align-items:center">
+          <input id="ci-search" class="form-input" placeholder="🔍 搜索编号、描述..." style="max-width:320px" />
+          <select id="ci-filter-dim" class="form-select" style="max-width:180px">
+            <option value="">全部维度</option>
+            <option>总体合规性</option>
+            <option>相关性核查</option>
+            <option>评分合规性</option>
+            <option>复核规范性</option>
+            <option>报告编报合规性</option>
+          </select>
+          <select id="ci-filter-method" class="form-select" style="max-width:140px">
+            <option value="">全部方法</option>
+            <option value="rule">规则</option>
+            <option value="llm">LLM</option>
+          </select>
+          <span id="ci-count" class="text-sm text-muted" style="margin-left:auto"></span>
+        </div>
         <div class="card" style="padding:0;overflow:hidden">
           <table class="table">
-            <thead><tr><th>编号</th><th>维度</th><th>子类</th><th>描述</th><th>方法</th><th>风险</th></tr></thead>
+            <thead>
+              <tr>
+                <th>编号</th><th>维度</th><th>子类</th><th>描述</th>
+                <th>方法</th><th>风险</th><th style="width:80px"></th>
+              </tr>
+            </thead>
             <tbody id="items-tbody"></tbody>
           </table>
         </div>
@@ -637,6 +726,72 @@
       <div class="action-bar">
         <button type="submit" class="btn btn-primary">创建并进入工作台</button>
         <button type="button" class="btn btn-ghost" data-close-modal="#create-task-modal">取消</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 上传法规 模态 -->
+<div id="reg-upload-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title">上传法规文件</div>
+    <div class="modal-sub">上传后会自动解析全文、分块入向量库，供 AI 核查时引用。</div>
+
+    <form id="reg-upload-form">
+      <div class="grid-2">
+        <div class="form-group" style="grid-column:1/3">
+          <label class="form-label">法规标题 *</label>
+          <input name="title" class="form-input" placeholder="例：行政事业单位内部控制规范（试行）" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">文档类型 *</label>
+          <select name="doc_type" class="form-select" required>
+            <option value="上位法">上位法</option>
+            <option value="评价办法">评价办法</option>
+            <option value="编报指南">编报指南</option>
+            <option value="地方法规">地方法规</option>
+            <option value="部门规章">部门规章</option>
+            <option value="高频问题">高频问题</option>
+            <option value="其它">其它</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">适用地区</label>
+          <select name="region" class="form-select">
+            <option value="国家">国家</option>
+            <option value="省">省级</option>
+            <option value="市">市级</option>
+            <option value="区县">区县</option>
+            <option value="部门">部门</option>
+            <option value="其它">其它</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">发文机关</label>
+          <input name="issuer" class="form-input" placeholder="例：财政部 / XX省财政厅" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">发文文号</label>
+          <input name="doc_number" class="form-input" placeholder="例：财办〔2025〕5号" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">生效日期</label>
+          <input name="effective_date" class="form-input" placeholder="例：2025-03-15" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">文件 *</label>
+          <input name="file" type="file" accept=".pdf,.docx,.txt,.md" class="form-input" required />
+        </div>
+        <div class="form-group" style="grid-column:1/3">
+          <label class="form-label">备注说明</label>
+          <textarea name="description" class="form-textarea" rows="2" placeholder="可选"></textarea>
+        </div>
+      </div>
+      <div id="reg-upload-error" class="callout callout-error hidden mb-3"></div>
+      <div id="reg-upload-status" class="text-sm mb-3"></div>
+      <div class="action-bar">
+        <button type="submit" class="btn btn-primary">上传并解析</button>
+        <button type="button" class="btn btn-ghost" data-close-modal="#reg-upload-modal">取消</button>
       </div>
     </form>
   </div>

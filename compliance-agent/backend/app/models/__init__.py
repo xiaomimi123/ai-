@@ -10,12 +10,13 @@ from app.models.entities import (
     Finding,
     Indicator,
     Material,
+    Regulation,
     User,
 )
 
 __all__ = [
     "Base", "SessionLocal", "engine", "get_db", "init_db",
     "User", "AuthToken", "AuditLog", "AppSetting",
-    "Indicator", "CheckItem", "AuditUnit",
+    "Indicator", "CheckItem", "Regulation", "AuditUnit",
     "AuditTask", "Material", "Finding",
 ]

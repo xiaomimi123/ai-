@@ -107,6 +107,35 @@ class IndicatorOut(BaseModel):
         from_attributes = True
 
 
+class RegulationOut(BaseModel):
+    id: int
+    title: str
+    doc_type: str
+    region: str
+    issuer: str
+    doc_number: str
+    effective_date: str
+    description: str
+    tags: str
+    file_name: str
+    file_size: int
+    file_type: str
+    chunks_count: int
+    indexed: bool
+    uploaded_by: Optional[int] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RegulationListResponse(BaseModel):
+    regulations: List[RegulationOut]
+    total: int
+    doc_types: List[str]
+    regions: List[str]
+
+
 class CheckItemIn(BaseModel):
     item_code: str
     dimension: str

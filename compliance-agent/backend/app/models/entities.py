@@ -96,6 +96,43 @@ class Indicator(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class Regulation(Base):
+    """法规库条目（v3 §3.1）。
+
+    支持上传原始文件（PDF/Word/TXT），并按文档类型与地区分类：
+    - 上位法 / 评价办法 / 编报指南 / 地方法规 / 部门规章 / 其它
+    - 国家 / 省 / 市 / 区县 / 部门
+    上传后自动解析全文，分块入 Qdrant 向量库供 RAG 检索。
+    """
+    __tablename__ = "regulations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(256), index=True)
+    doc_type: Mapped[str] = mapped_column(String(32), default="其它", index=True)
+    region: Mapped[str] = mapped_column(String(64), default="国家", index=True)
+    issuer: Mapped[str] = mapped_column(String(128), default="")    # 发文机关
+    doc_number: Mapped[str] = mapped_column(String(64), default="") # 发文文号
+    effective_date: Mapped[str] = mapped_column(String(32), default="")  # 生效日期 文本
+    description: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[str] = mapped_column(Text, default="[]")           # JSON 数组
+
+    # 文件元信息
+    file_name: Mapped[str] = mapped_column(String(512))
+    storage_path: Mapped[str] = mapped_column(String(1024))
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    file_type: Mapped[str] = mapped_column(String(16), default="")
+
+    # 解析与索引
+    parsed_text: Mapped[str] = mapped_column(Text, default="")  # 解析后全文（截断）
+    chunks_count: Mapped[int] = mapped_column(Integer, default=0)
+    indexed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    uploaded_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class CheckItem(Base):
     """问题清单条目（v3 §3.2）。
 

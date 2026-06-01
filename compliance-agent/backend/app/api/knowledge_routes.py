@@ -17,7 +17,7 @@ from app.api.schemas import (
     IndicatorOut,
 )
 from app.core.auth import get_current_user, log_action, require_admin, require_auditor
-from app.models import CheckItem, Indicator, User, get_db
+from app.models import CheckItem, Finding, Indicator, Material, User, get_db
 
 indicators_router = APIRouter(prefix="/api/indicators", tags=["knowledge:indicators"])
 checkitems_router = APIRouter(prefix="/api/check-items", tags=["knowledge:check-items"])
@@ -93,10 +93,20 @@ def delete_indicator(indicator_id: int,
     ind = db.get(Indicator, indicator_id)
     if not ind:
         raise HTTPException(404, "指标不存在")
+    # 引用检查：有材料或 Finding 引用时不允许删除
+    in_use_materials = db.query(Material).filter(Material.indicator_id == indicator_id).count()
+    in_use_findings = db.query(Finding).filter(Finding.indicator_id == indicator_id).count()
+    if in_use_materials or in_use_findings:
+        raise HTTPException(
+            400,
+            f"该指标已被引用：{in_use_materials} 份材料 / {in_use_findings} 条核查发现，无法删除。"
+            f"如需移除，请先删除引用它的核查任务。",
+        )
+    code = ind.indicator_code
     db.delete(ind)
     log_action(db, admin, "indicator.delete",
                target_type="indicator", target_id=indicator_id,
-               detail=f"{ind.indicator_code}")
+               detail=code)
     db.commit()
     return {"status": "ok"}
 

@@ -77,7 +77,7 @@ function toast(msg, kind = "info") {
 // ============================================================
 // Routing
 // ============================================================
-const ROUTES = ["dashboard", "tasks", "indicators", "check-items", "console"];
+const ROUTES = ["dashboard", "tasks", "regulations", "indicators", "check-items", "console"];
 
 function parseHash() {
   const h = (location.hash || "#/dashboard").replace(/^#\/?/, "");
@@ -100,6 +100,7 @@ function navigate(hash) {
 // 路由权限表：列出 route → 允许的角色（不在表中 = 所有登录用户）
 const ROUTE_GUARDS = {
   "console":      ["super_admin"],
+  "regulations":  ["super_admin", "auditor"],
   "indicators":   ["super_admin", "auditor"],
   "check-items":  ["super_admin", "auditor"],
 };
@@ -143,6 +144,7 @@ async function handleRoute() {
   switch (route) {
     case "dashboard": await loadDashboard(); break;
     case "tasks": await loadTasks(); break;
+    case "regulations": await loadRegulations(); break;
     case "indicators": await loadIndicators(); break;
     case "check-items": await loadCheckItems(); break;
     case "console":
@@ -733,19 +735,213 @@ document.getElementById("finding-filters").addEventListener("click", ev => {
 });
 
 // ============================================================
-// 知识库
+// 知识库 — 法规库
 // ============================================================
+let _regCache = { all: [], docTypes: [], regions: [] };
+
+async function loadRegulations() {
+  const params = new URLSearchParams();
+  const search = document.getElementById("reg-search").value.trim();
+  const docType = document.getElementById("reg-filter-type").value;
+  const region = document.getElementById("reg-filter-region").value;
+  if (search) params.set("search", search);
+  if (docType) params.set("doc_type", docType);
+  if (region) params.set("region", region);
+
+  try {
+    const resp = await api("/regulations?" + params.toString());
+    _regCache = { all: resp.regulations, docTypes: resp.doc_types, regions: resp.regions };
+
+    // 装填筛选下拉
+    const ftype = document.getElementById("reg-filter-type");
+    const fregion = document.getElementById("reg-filter-region");
+    if (ftype.options.length <= 1) {
+      ftype.innerHTML = `<option value="">全部类型</option>` +
+        resp.doc_types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    }
+    if (fregion.options.length <= 1) {
+      fregion.innerHTML = `<option value="">全部地区</option>` +
+        resp.regions.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+    }
+    if (docType) ftype.value = docType;
+    if (region) fregion.value = region;
+
+    document.getElementById("reg-count").textContent = `共 ${resp.total} 条`;
+
+    const tbody = document.getElementById("regulations-tbody");
+    if (!resp.regulations.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-state">
+        <div class="empty-state-glyph">⊕</div>
+        ${search || docType || region ? '当前筛选下无结果' : '暂无法规，请点击右上角「+ 上传法规」'}
+      </td></tr>`;
+      return;
+    }
+    tbody.innerHTML = resp.regulations.map(r => {
+      const isAdmin = State.user && State.user.role === "super_admin";
+      const sizeKB = (r.file_size / 1024).toFixed(1);
+      return `<tr>
+        <td>
+          <div style="font-weight:500">${esc(r.title)}</div>
+          ${r.description ? `<div class="text-sm text-muted mt-2">${esc(r.description)}</div>` : ''}
+        </td>
+        <td>${docTypeBadge(r.doc_type)}</td>
+        <td><span class="badge badge-gray">${esc(r.region)}</span></td>
+        <td class="text-sm">
+          ${r.issuer ? esc(r.issuer) : '<span class="text-faint">—</span>'}
+          ${r.doc_number ? '<div class="text-xs text-muted mt-2"><span class="code-id">' + esc(r.doc_number) + '</span></div>' : ''}
+        </td>
+        <td class="text-sm">
+          <div>${esc(r.file_name)}</div>
+          <div class="text-xs text-faint mt-2">${sizeKB} KB · ${esc(r.file_type)}</div>
+        </td>
+        <td>
+          ${r.indexed
+            ? `<span class="badge badge-green">${r.chunks_count} 块</span>`
+            : '<span class="badge badge-orange">未索引</span>'}
+        </td>
+        <td class="text-sm text-muted">${fmtTime(r.created_at)}</td>
+        <td>
+          <div class="flex gap-2" style="justify-content:flex-end">
+            <a href="${API}/regulations/${r.id}/download" target="_blank" class="btn btn-ghost btn-sm" title="下载">↓</a>
+            ${isAdmin ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteRegulation(${r.id}, '${esc(r.title)}')" title="删除">✕</button>` : ''}
+          </div>
+        </td>
+      </tr>`;
+    }).join("");
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function docTypeBadge(t) {
+  const map = {
+    "上位法":   ['badge badge-brand'],
+    "评价办法": ['badge badge-blue'],
+    "编报指南": ['badge badge-green'],
+    "地方法规": ['badge badge-orange'],
+    "部门规章": ['badge badge-gray'],
+    "高频问题": ['badge badge-red'],
+  };
+  const cls = (map[t] || ['badge badge-gray'])[0];
+  return `<span class="${cls}">${esc(t)}</span>`;
+}
+
+window.deleteRegulation = async function(id, title) {
+  if (!confirm(`确定删除法规《${title}》？\n该法规的原始文件将被删除（向量库内的索引块保留）。`)) return;
+  try {
+    await api(`/regulations/${id}`, { method: "DELETE" });
+    toast("✓ 已删除", "success");
+    loadRegulations();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+// 搜索 / 筛选 实时触发
+let _regSearchTimer;
+function bindRegFilters() {
+  const searchInput = document.getElementById("reg-search");
+  if (searchInput && !searchInput._bound) {
+    searchInput._bound = true;
+    searchInput.addEventListener("input", () => {
+      clearTimeout(_regSearchTimer);
+      _regSearchTimer = setTimeout(loadRegulations, 280);
+    });
+    document.getElementById("reg-filter-type").addEventListener("change", loadRegulations);
+    document.getElementById("reg-filter-region").addEventListener("change", loadRegulations);
+  }
+}
+bindRegFilters();
+
+// 上传弹窗
+document.getElementById("open-reg-upload").addEventListener("click", () => {
+  document.getElementById("reg-upload-modal").classList.remove("hidden");
+  document.getElementById("reg-upload-error").classList.add("hidden");
+  document.getElementById("reg-upload-status").innerHTML = "";
+  document.getElementById("reg-upload-form").reset();
+});
+
+document.getElementById("reg-upload-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const status = document.getElementById("reg-upload-status");
+  const errBox = document.getElementById("reg-upload-error");
+  errBox.classList.add("hidden");
+
+  // FormData 已包含 file + 所有 input；确保 tags 是合法 JSON
+  fd.set("tags", "[]");
+
+  status.innerHTML = `<div class="callout callout-info">正在解析并入向量库…可能耗时数秒</div>`;
+  try {
+    const tok = getToken();
+    const r = await fetch(`${API}/regulations`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + tok },
+      body: fd,
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: "上传失败" }));
+      throw new Error(err.detail || "上传失败");
+    }
+    const reg = await r.json();
+    status.innerHTML = `<div class="callout callout-success">✓ 上传成功 · ${reg.chunks_count} 个条款块已入向量库</div>`;
+    setTimeout(() => {
+      document.getElementById("reg-upload-modal").classList.add("hidden");
+      loadRegulations();
+    }, 800);
+  } catch (e) {
+    errBox.textContent = e.message;
+    errBox.classList.remove("hidden");
+    status.innerHTML = "";
+  }
+});
+
+// ============================================================
+// 知识库 — 评价指标 / 问题清单（增强：搜索 + 删除）
+// ============================================================
+let _indCache = [];
+
 async function loadIndicators() {
   const inds = await api("/indicators");
   State.indicators = inds;
+  _indCache = inds;
+
+  // 装填业务分类下拉
+  const fcat = document.getElementById("ind-filter-category");
+  if (fcat.options.length <= 1) {
+    const cats = [...new Set(inds.map(i => i.category).filter(Boolean))].sort();
+    fcat.innerHTML = `<option value="">全部业务分类</option>` +
+      cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  }
+  renderIndicators();
+}
+
+function renderIndicators() {
+  const search = document.getElementById("ind-search").value.trim().toLowerCase();
+  const level = document.getElementById("ind-filter-level").value;
+  const category = document.getElementById("ind-filter-category").value;
+
+  let filtered = _indCache;
+  if (level) filtered = filtered.filter(i => i.level === level);
+  if (category) filtered = filtered.filter(i => i.category === category);
+  if (search) {
+    filtered = filtered.filter(i =>
+      (i.indicator_code || "").toLowerCase().includes(search) ||
+      (i.name || "").toLowerCase().includes(search) ||
+      (i.category || "").toLowerCase().includes(search) ||
+      (i.subcategory || "").toLowerCase().includes(search)
+    );
+  }
+
+  document.getElementById("ind-count").textContent = `共 ${filtered.length} / ${_indCache.length} 条`;
   const tbody = document.getElementById("indicators-tbody");
-  if (!inds.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">
-      <div class="empty-state-glyph">⊕</div>暂无评价指标，使用右上角「批量导入 JSON」开始。
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">
+      <div class="empty-state-glyph">⊕</div>
+      ${_indCache.length === 0 ? '暂无评价指标，使用右上角「批量导入 JSON」开始' : '当前筛选下无结果'}
     </td></tr>`;
     return;
   }
-  tbody.innerHTML = inds.map(i => {
+  const isAdmin = State.user && State.user.role === "super_admin";
+  tbody.innerHTML = filtered.map(i => {
     let mats = []; try { mats = JSON.parse(i.required_materials || "[]"); } catch {}
     return `<tr>
       <td><span class="code-id">${esc(i.indicator_code)}</span></td>
@@ -754,28 +950,111 @@ async function loadIndicators() {
       <td style="font-weight:500">${esc(i.name)}</td>
       <td class="table-mono">${i.max_score}</td>
       <td class="text-sm text-muted">${esc(mats.join("、")) || '—'}</td>
+      <td class="text-right">
+        ${isAdmin
+          ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteIndicator(${i.id}, '${esc(i.indicator_code)}')">✕</button>`
+          : ''}
+      </td>
     </tr>`;
   }).join("");
 }
 
+window.deleteIndicator = async function(id, code) {
+  if (!confirm(`确定删除评价指标「${code}」？`)) return;
+  try {
+    await api(`/indicators/${id}`, { method: "DELETE" });
+    toast("✓ 已删除", "success");
+    loadIndicators();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+let _indSearchTimer;
+function bindIndFilters() {
+  const s = document.getElementById("ind-search");
+  if (s && !s._bound) {
+    s._bound = true;
+    s.addEventListener("input", () => {
+      clearTimeout(_indSearchTimer);
+      _indSearchTimer = setTimeout(renderIndicators, 200);
+    });
+    document.getElementById("ind-filter-level").addEventListener("change", renderIndicators);
+    document.getElementById("ind-filter-category").addEventListener("change", renderIndicators);
+  }
+}
+bindIndFilters();
+
+let _ciCache = [];
+
 async function loadCheckItems() {
   const items = await api("/check-items");
+  _ciCache = items;
+  renderCheckItems();
+}
+
+function renderCheckItems() {
+  const search = document.getElementById("ci-search").value.trim().toLowerCase();
+  const dim = document.getElementById("ci-filter-dim").value;
+  const method = document.getElementById("ci-filter-method").value;
+
+  let filtered = _ciCache;
+  if (dim) filtered = filtered.filter(x => x.dimension === dim);
+  if (method) filtered = filtered.filter(x => x.check_method === method);
+  if (search) {
+    filtered = filtered.filter(x =>
+      (x.item_code || "").toLowerCase().includes(search) ||
+      (x.description || "").toLowerCase().includes(search) ||
+      (x.subcategory || "").toLowerCase().includes(search)
+    );
+  }
+
+  document.getElementById("ci-count").textContent = `共 ${filtered.length} / ${_ciCache.length} 条`;
   const tbody = document.getElementById("items-tbody");
-  if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">
-      <div class="empty-state-glyph">⊕</div>暂无条目，请批量导入。
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">
+      <div class="empty-state-glyph">⊕</div>
+      ${_ciCache.length === 0 ? '暂无条目，请批量导入' : '当前筛选下无结果'}
     </td></tr>`;
     return;
   }
-  tbody.innerHTML = items.map(it => `<tr>
+  const isAdmin = State.user && State.user.role === "super_admin";
+  tbody.innerHTML = filtered.map(it => `<tr>
     <td><span class="code-id">${esc(it.item_code)}</span></td>
     <td><span class="badge badge-blue">${esc(it.dimension)}</span></td>
     <td>${esc(it.subcategory)}</td>
     <td class="text-sm">${esc(it.description)}</td>
     <td><span class="tag">${esc(it.check_method)}</span></td>
     <td><span class="chip-risk chip-risk-${it.risk_level}">${it.risk_level}</span></td>
+    <td class="text-right">
+      ${isAdmin
+        ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteCheckItem(${it.id}, '${esc(it.item_code)}')">✕</button>`
+        : ''}
+    </td>
   </tr>`).join("");
 }
+
+window.deleteCheckItem = async function(id, code) {
+  if (!confirm(`确定删除问题清单「${code}」？（软删，可在管理端恢复）`)) return;
+  try {
+    await api(`/check-items/${id}`, { method: "DELETE" });
+    toast("✓ 已删除", "success");
+    loadCheckItems();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+let _ciSearchTimer;
+function bindCiFilters() {
+  const s = document.getElementById("ci-search");
+  if (s && !s._bound) {
+    s._bound = true;
+    s.addEventListener("input", () => {
+      clearTimeout(_ciSearchTimer);
+      _ciSearchTimer = setTimeout(renderCheckItems, 200);
+    });
+    document.getElementById("ci-filter-dim").addEventListener("change", renderCheckItems);
+    document.getElementById("ci-filter-method").addEventListener("change", renderCheckItems);
+  }
+}
+bindCiFilters();
 
 async function uploadJson(endpoint, file) {
   const fd = new FormData(); fd.append("file", file);
