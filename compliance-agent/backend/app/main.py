@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.auth_routes import audit_router, auth_router, users_router
+from app.api.batch_routes import batch_router
 from app.api.collab_routes import collab_router
 from app.api.routes import router
 from app.core.config import settings
@@ -27,6 +28,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(audit_router)
 app.include_router(collab_router)
+app.include_router(batch_router)
 app.include_router(router)
 
 

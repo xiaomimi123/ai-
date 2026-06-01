@@ -129,6 +129,49 @@ class ChainCheckTaskOut(BaseModel):
         from_attributes = True
 
 
+class BatchCreateRequest(BaseModel):
+    name: str
+    project_id: str = ""
+    year: str = ""
+    department: str = ""
+    description: str = ""
+
+
+class BatchOut(BaseModel):
+    id: int
+    name: str
+    project_id: str = ""
+    year: str = ""
+    department: str = ""
+    description: str = ""
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BatchIngestResultItem(BaseModel):
+    file_name: str
+    document_id: Optional[int] = None
+    category: str = ""
+    subcategory: str = ""
+    confidence: float = 0.0
+    method: str = ""
+    check_task_id: Optional[int] = None
+    error: str = ""
+
+
+class BatchIngestResponse(BaseModel):
+    batch: BatchOut
+    items: List[BatchIngestResultItem]
+    triggered_chains: dict = {}
+
+
+class BatchDetailResponse(BaseModel):
+    batch: BatchOut
+    summary: dict
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

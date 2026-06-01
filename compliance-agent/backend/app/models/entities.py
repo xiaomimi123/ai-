@@ -47,6 +47,22 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class Batch(Base):
+    """检查批次：一次迎检 / 一个审计项目 的资料归集单位。"""
+    __tablename__ = "batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str] = mapped_column(String(64), default="")
+    year: Mapped[str] = mapped_column(String(16), default="")
+    department: Mapped[str] = mapped_column(String(128), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    documents: Mapped[List["Document"]] = relationship(back_populates="batch_ref")
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -60,8 +76,12 @@ class Document(Base):
     year: Mapped[str] = mapped_column(String(16), default="")
     department: Mapped[str] = mapped_column(String(128), default="")
     batch: Mapped[str] = mapped_column(String(64), default="")
+    batch_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("batches.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    batch_ref: Mapped[Optional["Batch"]] = relationship(back_populates="documents")
     checks: Mapped[List["CheckTask"]] = relationship(back_populates="document")
 
 

@@ -57,6 +57,7 @@ document.querySelectorAll(".nav-tab").forEach(btn => {
     if (btn.dataset.tab === "documents") loadDocs();
     if (btn.dataset.tab === "checks") loadDocsForCheck();
     if (btn.dataset.tab === "chains") loadDocsForChain();
+    if (btn.dataset.tab === "batches") loadBatches();
   });
 });
 
@@ -569,6 +570,194 @@ function renderChainResult(task) {
     `));
   });
 }
+
+// ─── 批次管理 ─────────────────────────────────────────
+let _activeBatchId = null;
+
+async function loadBatches() {
+  try {
+    const batches = await api("/batches");
+    const tbody = document.getElementById("batches-tbody");
+    if (!batches.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-slate-400 py-6">暂无批次。请在上方创建批次。</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = "";
+    batches.forEach(b => {
+      const row = el(`
+        <tr>
+          <td class="font-mono text-xs">${b.id}</td>
+          <td class="font-medium">${esc(b.name)}</td>
+          <td>${esc(b.project_id || "—")}</td>
+          <td>${esc(b.year || "—")}</td>
+          <td>${esc(b.department || "—")}</td>
+          <td class="text-xs text-slate-500">${fmtTime(b.created_at)}</td>
+          <td><button class="btn-secondary text-xs" data-id="${b.id}">查看</button></td>
+        </tr>`);
+      row.querySelector("button").addEventListener("click", () => openBatchDetail(b.id));
+      tbody.appendChild(row);
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+document.getElementById("batch-create-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const status = document.getElementById("batch-create-status");
+  try {
+    const b = await api("/batches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: fd.get("name"),
+        project_id: fd.get("project_id") || "",
+        year: fd.get("year") || "",
+        department: fd.get("department") || "",
+      }),
+    });
+    status.textContent = `✓ 批次 #${b.id} 已创建`;
+    status.className = "text-sm mt-2 text-emerald-600";
+    ev.target.reset();
+    loadBatches();
+    openBatchDetail(b.id);
+  } catch (e) {
+    status.textContent = "✗ " + e.message;
+    status.className = "text-sm mt-2 text-rose-600";
+  }
+});
+
+document.getElementById("bd-close").addEventListener("click", () => {
+  document.getElementById("batch-detail").classList.add("hidden");
+  _activeBatchId = null;
+});
+
+async function openBatchDetail(batchId) {
+  _activeBatchId = batchId;
+  document.getElementById("batch-detail").classList.remove("hidden");
+  await refreshBatchDetail();
+}
+
+const CHAIN_LABELS = { procurement: "招采链", finance: "财务链", report: "报告链" };
+
+async function refreshBatchDetail() {
+  if (!_activeBatchId) return;
+  const data = await api(`/batches/${_activeBatchId}`);
+  const b = data.batch;
+  document.getElementById("bd-title").textContent = `批次 #${b.id} · ${b.name}`;
+  document.getElementById("bd-meta").textContent =
+    `${b.project_id || ""} ${b.year || ""} ${b.department || ""}`.trim() || "无附加信息";
+
+  const s = data.summary;
+  const sumBox = document.getElementById("bd-summary");
+  sumBox.innerHTML = `
+    <div class="bg-slate-50 rounded p-3 border border-slate-200">
+      <div class="text-xs text-slate-500">文档总数</div>
+      <div class="text-2xl font-semibold mt-1">${s.documents_total}</div>
+    </div>
+    <div class="bg-slate-50 rounded p-3 border border-slate-200">
+      <div class="text-xs text-slate-500">检查任务</div>
+      <div class="text-2xl font-semibold mt-1">${s.check_tasks.length}</div>
+    </div>
+    <div class="bg-slate-50 rounded p-3 border border-slate-200">
+      <div class="text-xs text-slate-500">联动校验</div>
+      <div class="text-2xl font-semibold mt-1">${s.chain_tasks.length}</div>
+    </div>
+    <div class="bg-rose-50 rounded p-3 border border-rose-200">
+      <div class="text-xs text-rose-600">疑点总数</div>
+      <div class="text-2xl font-semibold text-rose-700 mt-1">${s.issues_total}</div>
+      <div class="text-xs text-slate-500 mt-1">高 ${s.issues_by_risk["高"] || 0} · 中 ${s.issues_by_risk["中"] || 0} · 低 ${s.issues_by_risk["低"] || 0}</div>
+    </div>
+  `;
+
+  const checkTbody = document.getElementById("bd-check-tbody");
+  checkTbody.innerHTML = s.check_tasks.length === 0
+    ? `<tr><td colspan="5" class="text-center text-slate-400 py-4">尚无检查任务</td></tr>`
+    : s.check_tasks.map(t => `
+        <tr>
+          <td class="font-mono text-xs">#${t.id}</td>
+          <td class="text-xs">文档 #${t.document_id}</td>
+          <td><span class="cat-tag">${esc(t.template_key)}</span></td>
+          <td><span class="cat-tag">${esc(t.status)}</span></td>
+          <td class="text-xs">${esc(t.summary || "—")}</td>
+        </tr>`).join("");
+
+  const chainTbody = document.getElementById("bd-chain-tbody");
+  chainTbody.innerHTML = s.chain_tasks.length === 0
+    ? `<tr><td colspan="4" class="text-center text-slate-400 py-4">尚未触发联动校验（需批次内文档凑齐对应链路）</td></tr>`
+    : s.chain_tasks.map(t => `
+        <tr>
+          <td class="font-mono text-xs">#${t.id}</td>
+          <td>${esc(CHAIN_LABELS[t.chain_type] || t.chain_type)}</td>
+          <td><span class="cat-tag">${esc(t.status)}</span></td>
+          <td class="text-xs">${esc(t.summary || "—")}</td>
+        </tr>`).join("");
+}
+
+document.getElementById("batch-upload-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  if (!_activeBatchId) return;
+  const fd = new FormData();
+  const fileInput = document.getElementById("bd-files");
+  if (!fileInput.files.length) return;
+  for (const f of fileInput.files) fd.append("files", f);
+
+  const status = document.getElementById("bd-upload-status");
+  status.textContent = `上传中（${fileInput.files.length} 个文件）…`;
+  status.className = "text-sm mt-2 text-indigo-600";
+  try {
+    const tok = getToken();
+    const r = await fetch(`${API}/batches/${_activeBatchId}/upload`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + tok },
+      body: fd,
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const result = await r.json();
+    // 展示分类结果
+    const resultsBox = document.getElementById("bd-upload-results");
+    resultsBox.innerHTML = `
+      <table class="table mt-2">
+        <thead><tr><th>文件</th><th>识别分类</th><th>方式</th><th>检查任务</th><th>状态</th></tr></thead>
+        <tbody>${result.items.map(i => `
+          <tr>
+            <td class="text-xs">${esc(i.file_name)}</td>
+            <td><span class="cat-tag">${esc(i.category || "—")}</span>${i.subcategory ? ' / ' + esc(i.subcategory) : ''}</td>
+            <td class="text-xs text-slate-500">${esc(i.method)} (${(i.confidence * 100).toFixed(0)}%)</td>
+            <td class="text-xs">${i.check_task_id ? '#' + i.check_task_id : '—'}</td>
+            <td class="text-xs ${i.error ? 'text-rose-600' : 'text-emerald-600'}">${i.error || '✓ 已入队'}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+      ${Object.keys(result.triggered_chains || {}).length > 0 ? `
+        <div class="mt-3 p-3 bg-indigo-50 border border-indigo-200 rounded text-sm">
+          <strong>自动触发联动校验：</strong>
+          ${Object.entries(result.triggered_chains).map(([k, v]) =>
+            `${CHAIN_LABELS[k] || k} (任务 #${v})`).join(" / ")}
+        </div>` : ""}
+    `;
+    status.textContent = `✓ 上传完成`;
+    status.className = "text-sm mt-2 text-emerald-600";
+    fileInput.value = "";
+    // 短暂等待 worker 完成后刷新
+    setTimeout(refreshBatchDetail, 1500);
+  } catch (e) {
+    status.textContent = "✗ " + e.message;
+    status.className = "text-sm mt-2 text-rose-600";
+  }
+});
+
+document.getElementById("bd-retrigger").addEventListener("click", async () => {
+  if (!_activeBatchId) return;
+  try {
+    const r = await api(`/batches/${_activeBatchId}/retrigger`, { method: "POST" });
+    alert(`重新触发：${JSON.stringify(r.triggered)}`);
+    setTimeout(refreshBatchDetail, 1500);
+  } catch (e) {
+    alert("失败：" + e.message);
+  }
+});
 
 // ─── 认证 ─────────────────────────────────────────────
 const Auth = { user: null, roleLabel: "", allowedCategories: [] };
