@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Callable, Dict
 
 from app.parsers.base import ParsedDocument
+from app.parsers.element_extractor import extract_key_elements
 from app.parsers.txt_parser import parse_txt
 from app.parsers.docx_parser import parse_docx
 from app.parsers.pdf_parser import parse_pdf
@@ -50,6 +51,9 @@ def parse(path: str, use_cache: bool = True) -> ParsedDocument:
         if key in _cache:
             return _cache[key]
     result = parser(path)
+    # v3 §3.3：自动抽取 key_elements
+    file_name = Path(path).name
+    result.key_elements = extract_key_elements(result.text, file_name=file_name)
     if use_cache and key is not None:
         _cache[key] = result
     return result
