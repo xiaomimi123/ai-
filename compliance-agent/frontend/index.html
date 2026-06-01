@@ -18,14 +18,38 @@
           <p class="text-xs text-slate-500">7 套检查模板 · 3 条联动校验链 · 全流程留痕</p>
         </div>
       </div>
-      <nav class="flex gap-1">
-        <button class="nav-tab tab-active" data-tab="dashboard">仪表板</button>
-        <button class="nav-tab" data-tab="documents">文档管理</button>
-        <button class="nav-tab" data-tab="checks">单文件检查</button>
-        <button class="nav-tab" data-tab="chains">联动校验</button>
-      </nav>
+      <div class="flex items-center gap-4">
+        <nav class="flex gap-1">
+          <button class="nav-tab tab-active" data-tab="dashboard">仪表板</button>
+          <button class="nav-tab" data-tab="documents">文档管理</button>
+          <button class="nav-tab" data-tab="checks">单文件检查</button>
+          <button class="nav-tab" data-tab="chains">联动校验</button>
+          <button class="nav-tab" data-tab="admin" id="nav-admin" style="display:none">系统管理</button>
+        </nav>
+        <div id="user-bar" class="text-sm text-slate-600 flex items-center gap-2"></div>
+      </div>
     </div>
   </header>
+
+  <!-- 登录蒙层 -->
+  <div id="login-modal" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-6">
+      <h2 class="text-lg font-semibold">登录</h2>
+      <p class="text-xs text-slate-500 mt-1">默认管理员：admin / admin123（首次部署后请尽快修改密码）</p>
+      <form id="login-form" class="mt-4 space-y-3">
+        <div>
+          <label class="form-label">用户名</label>
+          <input name="username" class="form-input" required autofocus />
+        </div>
+        <div>
+          <label class="form-label">密码</label>
+          <input name="password" type="password" class="form-input" required />
+        </div>
+        <div id="login-error" class="text-sm text-rose-600 hidden"></div>
+        <button type="submit" class="btn-primary w-full">登录</button>
+      </form>
+    </div>
+  </div>
 
   <main class="max-w-7xl mx-auto px-6 py-6">
     <!-- ───────── 仪表板 ───────── -->
@@ -212,6 +236,45 @@
               </tr>
             </thead>
             <tbody id="chain-issues-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <!-- ───────── 系统管理（仅管理员可见）───────── -->
+    <section id="tab-admin" class="tab-panel hidden">
+      <div class="card mb-6">
+        <h2 class="card-title">用户管理</h2>
+        <form id="user-form" class="mt-3 grid grid-cols-1 md:grid-cols-5 gap-3">
+          <input name="username" placeholder="用户名" class="form-input" required />
+          <input name="password" type="password" placeholder="初始密码" class="form-input" required />
+          <select name="role" class="form-input" required>
+            <option value="">— 角色 —</option>
+            <option value="admin">管理员</option>
+            <option value="procurement">招采专员</option>
+            <option value="finance">财务专员</option>
+            <option value="internal_control">内控专员</option>
+          </select>
+          <input name="full_name" placeholder="姓名（可选）" class="form-input" />
+          <button type="submit" class="btn-primary">创建用户</button>
+        </form>
+        <div id="user-form-status" class="text-sm mt-2"></div>
+        <div class="mt-4 overflow-x-auto">
+          <table class="table">
+            <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>姓名</th><th>状态</th></tr></thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="flex items-center justify-between">
+          <h2 class="card-title">审计日志（最近 100 条）</h2>
+          <button id="refresh-audit" class="btn-secondary text-sm">刷新</button>
+        </div>
+        <div class="mt-3 overflow-x-auto">
+          <table class="table">
+            <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>对象</th><th>详情</th></tr></thead>
+            <tbody id="audit-tbody"></tbody>
           </table>
         </div>
       </div>

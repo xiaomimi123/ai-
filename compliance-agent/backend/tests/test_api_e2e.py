@@ -18,14 +18,15 @@ from tests.samples import (
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(auth_headers):
+    """已附带管理员 Authorization 头的 TestClient。"""
     from fastapi.testclient import TestClient
 
     from app.main import app
     from app.models import init_db
 
     init_db()
-    with TestClient(app) as c:
+    with TestClient(app, headers=auth_headers) as c:
         yield c
 
 

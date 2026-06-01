@@ -1,13 +1,31 @@
-// 前端应用：与 /api 通信、管理 4 个面板的状态与渲染。
+// 前端应用：与 /api 通信、管理 5 个面板的状态与渲染。
 
 const API = "/api";
+const TOKEN_KEY = "compliance.token";
 
 // ─── 通用工具 ─────────────────────────────────────────
+function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
+function setToken(t) {
+  if (t) localStorage.setItem(TOKEN_KEY, t);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
 async function api(path, opts = {}) {
-  const r = await fetch(API + path, opts);
+  const headers = new Headers(opts.headers || {});
+  const tok = getToken();
+  if (tok) headers.set("Authorization", "Bearer " + tok);
+  const r = await fetch(API + path, { ...opts, headers });
+  if (r.status === 401) {
+    setToken("");
+    Auth.user = null;
+    showLogin("登录已失效，请重新登录");
+    throw new Error("未登录");
+  }
   if (!r.ok) {
     const text = await r.text().catch(() => "");
-    throw new Error(`API ${path} 失败 (${r.status}): ${text || r.statusText}`);
+    let msg = text;
+    try { msg = JSON.parse(text).detail || text; } catch {}
+    throw new Error(`${msg || r.statusText} (HTTP ${r.status})`);
   }
   const ct = r.headers.get("content-type") || "";
   return ct.includes("json") ? r.json() : r.blob();
@@ -341,5 +359,154 @@ function renderChainResult(task) {
   });
 }
 
+// ─── 认证 ─────────────────────────────────────────────
+const Auth = { user: null, roleLabel: "", allowedCategories: [] };
+
+function showLogin(msg = "") {
+  document.getElementById("login-modal").classList.remove("hidden");
+  const errBox = document.getElementById("login-error");
+  if (msg) {
+    errBox.textContent = msg;
+    errBox.classList.remove("hidden");
+  } else {
+    errBox.classList.add("hidden");
+  }
+}
+
+function hideLogin() {
+  document.getElementById("login-modal").classList.add("hidden");
+}
+
+function renderUserBar() {
+  const bar = document.getElementById("user-bar");
+  if (!Auth.user) {
+    bar.innerHTML = "";
+    return;
+  }
+  bar.innerHTML = `
+    <span class="text-sm">
+      <span class="font-medium">${esc(Auth.user.full_name || Auth.user.username)}</span>
+      <span class="text-xs text-slate-400 ml-1">· ${esc(Auth.roleLabel)}</span>
+    </span>
+    <button id="logout-btn" class="btn-secondary text-xs">退出</button>
+  `;
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    try { await api("/auth/logout", { method: "POST" }); } catch {}
+    setToken("");
+    Auth.user = null;
+    renderUserBar();
+    document.getElementById("nav-admin").style.display = "none";
+    showLogin();
+  });
+  document.getElementById("nav-admin").style.display =
+    Auth.user.role === "admin" ? "" : "none";
+}
+
+document.getElementById("login-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  try {
+    const r = await fetch(API + "/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: fd.get("username"),
+        password: fd.get("password"),
+      }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: "登录失败" }));
+      throw new Error(err.detail || "登录失败");
+    }
+    const data = await r.json();
+    setToken(data.token);
+    Auth.user = data.user;
+    Auth.roleLabel = data.role_label;
+    Auth.allowedCategories = data.allowed_categories;
+    hideLogin();
+    renderUserBar();
+    loadDashboard();
+  } catch (e) {
+    showLogin(e.message);
+  }
+});
+
+// ─── 系统管理（仅管理员）─────────────────────────────
+async function loadAdmin() {
+  if (!Auth.user || Auth.user.role !== "admin") return;
+  try {
+    const users = await api("/users");
+    const utbody = document.getElementById("users-tbody");
+    utbody.innerHTML = users.map(u => `
+      <tr>
+        <td class="font-mono text-xs">${u.id}</td>
+        <td>${esc(u.username)}</td>
+        <td><span class="cat-tag">${esc(u.role)}</span></td>
+        <td>${esc(u.full_name || "—")}</td>
+        <td>${u.is_active ? "✓" : "✗"}</td>
+      </tr>`).join("");
+
+    const logs = await api("/audit-logs?limit=100");
+    const atbody = document.getElementById("audit-tbody");
+    atbody.innerHTML = logs.map(l => `
+      <tr>
+        <td class="text-xs text-slate-500">${fmtTime(l.created_at)}</td>
+        <td>${esc(l.username || "—")}</td>
+        <td><span class="cat-tag">${esc(l.action)}</span></td>
+        <td class="text-xs">${esc(l.target_type)}${l.target_id ? ' #' + l.target_id : ''}</td>
+        <td class="text-xs text-slate-600">${esc(l.detail || "—")}</td>
+      </tr>`).join("") || `<tr><td colspan="5" class="text-center text-slate-400 py-4">无日志</td></tr>`;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+document.getElementById("user-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const status = document.getElementById("user-form-status");
+  try {
+    await api("/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: fd.get("username"),
+        password: fd.get("password"),
+        role: fd.get("role"),
+        full_name: fd.get("full_name") || "",
+      }),
+    });
+    status.textContent = "✓ 用户已创建";
+    status.className = "text-sm mt-2 text-emerald-600";
+    ev.target.reset();
+    loadAdmin();
+  } catch (e) {
+    status.textContent = "✗ " + e.message;
+    status.className = "text-sm mt-2 text-rose-600";
+  }
+});
+
+document.getElementById("refresh-audit").addEventListener("click", loadAdmin);
+
+// 给「系统管理」tab 注册 loadAdmin 钩子（覆盖原 nav-tab 行为）
+document.querySelector('[data-tab="admin"]').addEventListener("click", loadAdmin);
+
 // ─── 启动 ─────────────────────────────────────────────
-loadDashboard();
+async function bootstrap() {
+  if (getToken()) {
+    try {
+      const data = await api("/auth/me");
+      Auth.user = data.user;
+      Auth.roleLabel = data.role_label;
+      Auth.allowedCategories = data.allowed_categories;
+      hideLogin();
+      renderUserBar();
+      loadDashboard();
+      return;
+    } catch {
+      // token 失效 → 落到登录界面
+    }
+  }
+  showLogin();
+}
+bootstrap();

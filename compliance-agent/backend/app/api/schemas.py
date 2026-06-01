@@ -97,6 +97,49 @@ class ChainCheckTaskOut(BaseModel):
         from_attributes = True
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    role: str
+    full_name: str = ""
+    is_active: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user: UserOut
+    role_label: str
+    allowed_categories: List[str] = []
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str
+    full_name: str = ""
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    username: str
+    action: str
+    target_type: str
+    target_id: Optional[int] = None
+    detail: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class TemplateOut(BaseModel):
     key: str
     name: str
