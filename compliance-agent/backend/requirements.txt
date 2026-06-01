@@ -19,7 +19,10 @@ qdrant-client==1.9.1
 # bge embedding 体积大（依赖 torch），按需安装后将 EMBEDDER=bge：
 # sentence-transformers==3.0.1
 
-# LLM（境外）。设置 ANTHROPIC_API_KEY 且 LLM_PROVIDER=claude 时启用
+# LLM
+# v3 主用：DeepSeek V4 Pro（兼容 OpenAI 格式，1M 上下文，国内稳定）
+openai>=1.40.0
+# 备选：Claude
 anthropic==0.28.0
 
 # 报告导出

@@ -1,0 +1,108 @@
+[
+  {
+    "item_code": "TZ-001",
+    "dimension": "总体合规性",
+    "subcategory": "真实性",
+    "description": "材料应加盖单位公章/部门章，关键页签字齐全",
+    "applicable_indicators": [],
+    "risk_level": "高",
+    "common_patterns": ["缺公章", "签字缺失", "章模糊不清"],
+    "check_method": "rule",
+    "keywords": ["盖章", "签字", "公章", "签发"]
+  },
+  {
+    "item_code": "TZ-002",
+    "dimension": "总体合规性",
+    "subcategory": "年度一致性",
+    "description": "材料应为评价对应年度（默认 2025），不得跨年替代",
+    "applicable_indicators": [],
+    "risk_level": "高",
+    "common_patterns": ["2024 年材料替代 2025 年", "无日期"],
+    "check_method": "rule",
+    "keywords": ["2025", "二〇二五"]
+  },
+  {
+    "item_code": "TZ-003",
+    "dimension": "总体合规性",
+    "subcategory": "正式性",
+    "description": "材料应为正式印发文件，不得为草稿、白条、非正式纪要",
+    "applicable_indicators": [],
+    "risk_level": "中",
+    "common_patterns": ["标'草稿'/'征求意见稿'", "无发文文号", "缺红头"],
+    "check_method": "rule",
+    "keywords": ["草稿", "征求意见", "讨论稿", "白条"]
+  },
+  {
+    "item_code": "TZ-004",
+    "dimension": "总体合规性",
+    "subcategory": "要素完整性",
+    "description": "材料应有发文文号、标题、签章、日期、页码等基本要素",
+    "applicable_indicators": [],
+    "risk_level": "中",
+    "common_patterns": ["缺发文文号", "缺日期", "缺页码"],
+    "check_method": "rule",
+    "keywords": ["发文文号", "印发日期"]
+  },
+  {
+    "item_code": "XG-001",
+    "dimension": "相关性核查",
+    "subcategory": "材料-指标匹配",
+    "description": "上传材料应与所绑定的评价指标实质相关，内容贴合考察点",
+    "applicable_indicators": [],
+    "risk_level": "高",
+    "common_patterns": ["拿其他业务材料凑数", "标题相关但正文不相关"],
+    "check_method": "llm"
+  },
+  {
+    "item_code": "WZ-001",
+    "dimension": "相关性核查",
+    "subcategory": "组织层面",
+    "description": "三重一大材料应明确决策事项范围、决策程序、记录方式",
+    "applicable_indicators": ["1-1-1"],
+    "risk_level": "高",
+    "common_patterns": ["事项范围笼统", "缺决策程序", "无会议纪要"],
+    "check_method": "llm"
+  },
+  {
+    "item_code": "PF-001",
+    "dimension": "评分合规性",
+    "subcategory": "关键岗位轮岗扣分",
+    "description": "财务关键岗位长期未轮岗应扣分，扣分依据是否合规",
+    "applicable_indicators": ["1-1-2"],
+    "risk_level": "中",
+    "common_patterns": ["长期未轮岗未扣分", "扣分理由不充分"],
+    "check_method": "llm"
+  },
+  {
+    "item_code": "PF-002",
+    "dimension": "评分合规性",
+    "subcategory": "补充指标总分",
+    "description": "补充评价指标总分必须为 10 分整",
+    "applicable_indicators": [],
+    "risk_level": "高",
+    "common_patterns": ["补充指标总分超过 10 分", "补充指标总分不足 10 分"],
+    "check_method": "rule",
+    "keywords": ["补充指标"]
+  },
+  {
+    "item_code": "FH-001",
+    "dimension": "复核规范性",
+    "subcategory": "复核权限",
+    "description": "复核人应具备相应权限，不得越权或缺位",
+    "applicable_indicators": [],
+    "risk_level": "中",
+    "common_patterns": ["越权复核", "复核岗位缺失"],
+    "check_method": "llm"
+  },
+  {
+    "item_code": "BG-001",
+    "dimension": "报告编报合规性",
+    "subcategory": "基本信息",
+    "description": "报告基本信息（单位名称、年度、负责人等）应准确",
+    "applicable_indicators": [],
+    "risk_level": "中",
+    "common_patterns": ["单位名称错误", "年度笔误", "负责人缺失"],
+    "check_method": "rule",
+    "keywords": ["单位名称", "报告年度", "负责人"]
+  }
+]

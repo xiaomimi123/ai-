@@ -1,0 +1,62 @@
+[
+  {
+    "indicator_code": "1-1-1",
+    "level": "单位",
+    "category": "组织层面",
+    "subcategory": "决策机制",
+    "name": "三重一大决策制度建立与执行",
+    "description": "本单位建立健全'三重一大'集体决策制度，并实际执行。",
+    "max_score": 4,
+    "deduct_rules": "未建立制度扣4分；建立未执行扣2分；执行不规范每例扣0.5分。",
+    "common_deductions": "1. 无三重一大相关制度文件；2. 制度内容笼统，未明确事项范围与决策程序；3. 重大事项未上会，缺少会议纪要佐证；4. 会议纪要无参会人员签字。",
+    "required_materials": ["三重一大制度文件", "三重一大会议纪要", "决策事项清单"]
+  },
+  {
+    "indicator_code": "1-1-2",
+    "level": "单位",
+    "category": "组织层面",
+    "subcategory": "关键岗位轮岗",
+    "name": "关键岗位轮岗制度建立与执行",
+    "description": "建立关键岗位轮岗制度，财务等关键岗位定期轮岗。",
+    "max_score": 3,
+    "deduct_rules": "无轮岗制度扣3分；有制度未执行扣1.5分；岗位长期未轮岗每例扣0.5分。",
+    "common_deductions": "1. 缺少关键岗位轮岗制度；2. 财务负责人多年未轮岗；3. 轮岗记录不齐全；4. 轮岗周期与制度规定不符。",
+    "required_materials": ["关键岗位轮岗制度", "岗位轮岗记录"]
+  },
+  {
+    "indicator_code": "1-1-3",
+    "level": "单位",
+    "category": "组织层面",
+    "subcategory": "内控会议",
+    "name": "内控领导小组会议召开情况",
+    "description": "本年度召开内控领导小组会议研究内控工作。",
+    "max_score": 2,
+    "deduct_rules": "未召开扣2分；召开但无纪要扣1分；纪要内容空泛扣0.5分。",
+    "common_deductions": "1. 全年未召开内控会议；2. 会议纪要缺失或不完整；3. 会议未涉及内控议题；4. 参会人员签字不全。",
+    "required_materials": ["内控领导小组会议纪要"]
+  },
+  {
+    "indicator_code": "2-1-1",
+    "level": "单位",
+    "category": "预算业务",
+    "subcategory": "预算编制",
+    "name": "预算编制制度建立与执行",
+    "description": "建立预算编制管理制度，按制度执行。",
+    "max_score": 4,
+    "deduct_rules": "无制度扣4分；制度过期/未更新扣2分；未按制度执行扣2分。",
+    "common_deductions": "1. 缺少预算编制管理办法；2. 制度内容陈旧未更新；3. 预算编制流程不规范；4. 缺少预算论证记录。",
+    "required_materials": ["预算编制管理办法", "预算编制流程", "预算审议记录"]
+  },
+  {
+    "indicator_code": "3-1-1",
+    "level": "单位",
+    "category": "政府采购",
+    "subcategory": "采购全流程",
+    "name": "政府采购制度与执行",
+    "description": "按《政府采购法》及实施条例执行采购活动。",
+    "max_score": 5,
+    "deduct_rules": "无制度扣5分；未按规定方式采购每例扣2分；采购过程缺失留痕每例扣1分。",
+    "common_deductions": "1. 缺少政府采购管理办法；2. 应招标项目未公开招标；3. 采购验收单缺失；4. 中标公告未公示。",
+    "required_materials": ["政府采购管理办法", "招标文件", "中标通知", "采购合同", "验收记录"]
+  }
+]
