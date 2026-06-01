@@ -4,7 +4,11 @@
 
 ## 当前进度
 
-**Phase 1（已完成）：单文件合规检查闭环** —— 解析 → 刚性校验 → RAG+LLM 柔性校验 → 问题台账 → 报告导出，已对「合同」类文档跑通并通过测试。
+- ✅ **Phase 1**：单文件检查闭环（合同）
+- ✅ **Phase 2**：7 套检查模板（合同/制度/招采三合一/内控/财务+决算/资产/绩效，共 59 刚性 + 7 柔性规则）
+- ✅ **Phase 3**：3 条联动校验链（招采链/财务链/报告链，共 21 条跨文件规则）
+- ✅ **Phase 4 前端**：单页 HTML + Vanilla JS + Tailwind CDN，4 个面板（仪表板/文档管理/单文件检查/联动校验）
+- ⬜ **Phase 4 余下**：Celery 异步、权限分级、协同复核、批量处理
 
 设计文档：`../docs/superpowers/specs/2026-05-31-phase1-single-file-check-design.md`
 
@@ -28,10 +32,13 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt           # 或仅装测试所需子集
 pytest                                     # 跑全部单元 + 端到端测试
-uvicorn app.main:app --reload             # 启动 API，访问 http://localhost:8000/docs
+uvicorn app.main:app --reload             # 启动 API+前端，访问 http://localhost:8000/
 ```
 
 默认走 SQLite + 内存向量库 + stub LLM，无需任何外部服务。
+
+- 前端 UI：`http://localhost:8000/`
+- API 文档：`http://localhost:8000/docs`
 
 ## Docker（全栈，对齐生产）
 
