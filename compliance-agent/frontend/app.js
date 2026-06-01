@@ -1157,37 +1157,71 @@ async function loadLLMConfig() {
 
 document.getElementById("llm-form").addEventListener("submit", async ev => {
   ev.preventDefault();
-  const fd = new FormData(ev.target);
+  const form = ev.target;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const fd = new FormData(form);
+  const status = document.getElementById("llm-status");
   const payload = {
     provider: fd.get("provider"), model: fd.get("model"),
     base_url: fd.get("base_url"), thinking_mode: fd.get("thinking_mode"),
   };
   const apiKey = fd.get("api_key");
   if (apiKey !== "") payload.api_key = apiKey.trim();
+
+  // 立即反馈（toast + callout + 按钮 loading）
+  status.innerHTML = `<div class="callout callout-info">正在保存配置…</div>`;
+  if (submitBtn) {
+    submitBtn._origText = submitBtn._origText || submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "保存中…";
+  }
+  toast("正在保存 LLM 配置…");
+
   try {
-    await api("/settings/llm", {
+    const result = await api("/settings/llm", {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    document.getElementById("llm-status").innerHTML = `<div class="callout callout-success">✓ 已保存</div>`;
-    loadLLMConfig();
+    const provider = result.provider || payload.provider;
+    const hasKey = result.has_api_key ? "已配置 API Key" : "未配置 API Key";
+    status.innerHTML = `<div class="callout callout-success">✓ 已保存 · ${esc(provider)} · ${esc(hasKey)}</div>`;
+    toast(`✓ 已保存：${provider}（${hasKey}）`, "success");
+    await loadLLMConfig();
   } catch (e) {
-    document.getElementById("llm-status").innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
+    status.innerHTML = `<div class="callout callout-error">✗ 保存失败：${esc(e.message)}</div>`;
+    toast(`✗ 保存失败：${e.message}`, "error");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = submitBtn._origText || "保存配置";
+    }
   }
 });
 
 document.getElementById("llm-test").addEventListener("click", async () => {
+  const btn = document.getElementById("llm-test");
   const status = document.getElementById("llm-status");
-  status.innerHTML = `<div class="callout callout-info">测试中…</div>`;
+  btn._origText = btn._origText || btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "测试中…";
+  status.innerHTML = `<div class="callout callout-info">正在向 LLM 发送测试请求…</div>`;
+  toast("正在测试 LLM 连接…");
   try {
     const r = await api("/settings/llm/test", { method: "POST" });
     if (r.success) {
-      status.innerHTML = `<div class="callout callout-success">✓ ${esc(r.client)} 连接成功</div>`;
+      const preview = (r.preview || "").slice(0, 60);
+      status.innerHTML = `<div class="callout callout-success">✓ ${esc(r.client)} 连接成功${preview ? ' · 响应：' + esc(preview) : ''}</div>`;
+      toast(`✓ ${r.client} 连接成功`, "success");
     } else {
       status.innerHTML = `<div class="callout callout-error">✗ ${esc(r.client)}：${esc(r.error)}</div>`;
+      toast(`✗ 测试失败：${r.error}`, "error");
     }
   } catch (e) {
     status.innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
+    toast(`✗ ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btn._origText || "测试连接";
   }
 });
 
