@@ -10,144 +10,219 @@
 <body>
 
 <!-- ============================================================
-     登录蒙层
+     登录页 · 左右分屏
 ============================================================ -->
-<div id="login-modal" class="modal-overlay hidden">
-  <div class="modal">
-    <div class="modal-title">敬启者，请登录</div>
-    <div class="modal-sub">
-      <span class="serif">内控评价智能审核系统</span>
-      <br /><span class="text-xs muted">默认凭据：admin / admin123</span>
+<div id="login-shell" class="login-shell hidden">
+  <div class="login-left">
+    <div class="login-brand">
+      <div class="login-brand-mark">内</div>
+      <div class="login-brand-name">内控评价智能审核系统</div>
     </div>
-    <form id="login-form">
-      <div class="form-group">
-        <label class="form-label">账号</label>
-        <input name="username" class="form-input" required autofocus />
+
+    <div class="login-hero">
+      <div class="login-hero-eyebrow">FOR AUDIT REVIEWERS</div>
+      <h1 class="login-hero-title">
+        让 <span>AI</span><br />
+        替你逐项核查<br />
+        被检查单位的<br />
+        内控评价材料
+      </h1>
+      <p class="login-hero-desc">
+        站在上级复核方视角，AI 拿着问题清单和法规，
+        把人工数天的材料核查压缩到分钟级，
+        让你专注在最需要判断的环节。
+      </p>
+    </div>
+
+    <div class="login-features">
+      <div class="login-feature">
+        <div class="login-feature-icon">①</div>
+        <div>
+          <div class="login-feature-title">五维核查</div>
+          <div class="login-feature-desc">真实性 / 相关性 / 评分 / 复核 / 报告 五个维度自动覆盖</div>
+        </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">密码</label>
-        <input name="password" type="password" class="form-input" required />
+      <div class="login-feature">
+        <div class="login-feature-icon">②</div>
+        <div>
+          <div class="login-feature-title">规则 + LLM 双路径</div>
+          <div class="login-feature-desc">公章 / 签字 / 年度走刚性规则；语义相关性走 DeepSeek</div>
+        </div>
       </div>
-      <div id="login-error" class="callout hidden mb-4"></div>
-      <button type="submit" class="btn btn-seal w-full">登 入</button>
-    </form>
+      <div class="login-feature">
+        <div class="login-feature-icon">③</div>
+        <div>
+          <div class="login-feature-title">全程留痕可溯源</div>
+          <div class="login-feature-desc">操作日志、AI 引用法规原文、人工复核标注完整保留</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="login-footer">
+      © 内控评价智能审核系统 · 全部数据本地化部署
+    </div>
+  </div>
+
+  <div class="login-right">
+    <div class="login-card">
+      <h1 class="login-title">欢迎登录</h1>
+      <p class="login-sub">使用您的账号继续核查工作</p>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label">账号</label>
+          <input name="username" class="form-input" required autofocus autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">密码</label>
+          <input name="password" type="password" class="form-input" required autocomplete="current-password" />
+        </div>
+        <div id="login-error" class="callout callout-error hidden mb-4"></div>
+        <button type="submit" class="login-btn">登 录</button>
+      </form>
+
+      <div class="login-hint">
+        默认管理员凭据 ·
+        <code>admin</code> /
+        <code>admin123</code>
+      </div>
+    </div>
   </div>
 </div>
 
 <!-- ============================================================
-     主体 App Shell
+     主体 App
 ============================================================ -->
 <div id="app" class="app-shell hidden">
 
-  <!-- ───────── 侧边栏 ───────── -->
+  <!-- 侧边栏 -->
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-mark">內 控 評 價</div>
-      <div class="brand-title">智能审核系统</div>
-      <div class="brand-sub">— 上级复核方视角</div>
+      <div class="brand-row">
+        <div class="brand-mark">内</div>
+        <div>
+          <div class="brand-title">内控评价审核</div>
+          <div class="brand-sub">智能审核系统</div>
+        </div>
+      </div>
     </div>
 
     <div class="nav-section">
       <div class="nav-section-label">日常</div>
       <button class="nav-link" data-route="dashboard">
-        <span class="nav-link-icon">◇</span> 工作台
+        <span class="nav-link-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </span> 工作台
       </button>
       <button class="nav-link" data-route="tasks">
-        <span class="nav-link-icon">◈</span> 核查任务
+        <span class="nav-link-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M3 4h10M3 8h10M3 12h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </span> 核查任务
       </button>
     </div>
 
     <div class="nav-section">
       <div class="nav-section-label">知识库</div>
       <button class="nav-link" data-route="indicators">
-        <span class="nav-link-icon">◇</span> 评价指标
+        <span class="nav-link-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M3 3h10v10H3z M6 6h4 M6 8h4 M6 10h2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </span> 评价指标
       </button>
       <button class="nav-link" data-route="check-items">
-        <span class="nav-link-icon">◇</span> 问题清单
+        <span class="nav-link-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4 3h6l2 2v8H4z M4 7h6 M4 10h4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span> 问题清单
       </button>
     </div>
 
     <div class="nav-section" id="nav-admin-section" style="display:none">
       <div class="nav-section-label">管理</div>
-      <button class="nav-link" data-route="users">
-        <span class="nav-link-icon">◆</span> 用户
-      </button>
-      <button class="nav-link" data-route="audit-logs">
-        <span class="nav-link-icon">◆</span> 操作日志
-      </button>
-      <button class="nav-link" data-route="settings">
-        <span class="nav-link-icon">◆</span> 系统设置
+      <button class="nav-link" data-route="console">
+        <span class="nav-link-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M8 1v2 M8 13v2 M1 8h2 M13 8h2 M3 3l1.5 1.5 M11.5 11.5L13 13 M3 13l1.5-1.5 M11.5 4.5L13 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </span> 后台管理
       </button>
     </div>
 
     <div class="sidebar-footer">
-      <div id="user-info"></div>
+      <div id="user-card"></div>
     </div>
   </aside>
 
-  <!-- ───────── 主区 ───────── -->
+  <!-- 主区 -->
   <main class="main">
 
     <!-- 工作台 -->
     <section id="page-dashboard" class="page-section hidden">
       <header class="page-header">
-        <div class="page-eyebrow">DASHBOARD · 概览</div>
+        <div class="page-eyebrow">DASHBOARD</div>
         <div class="page-header-row">
           <div>
             <h1 class="page-title">工作台</h1>
-            <div class="page-sub">站在上级复核方视角，AI 拿着问题清单和法规，对被检查单位逐项核查。</div>
+            <p class="page-sub">站在上级复核方视角，AI 拿着问题清单和法规，对被检查单位逐项核查。</p>
           </div>
-          <button class="btn btn-seal" id="quick-create-task">新建核查任务 →</button>
+          <button class="btn btn-primary" id="quick-create-task">+ 新建核查任务</button>
         </div>
       </header>
       <div class="page-body">
         <div class="grid-4 mb-6" id="dash-stats"></div>
 
-        <div class="grid-2 mt-6">
+        <div class="grid-2">
           <div class="card fade-in fade-in-2">
             <div class="section-title">待我处理</div>
-            <div id="dash-pending" class="marginalia-list"></div>
+            <div id="dash-pending"></div>
           </div>
           <div class="card fade-in fade-in-3">
             <div class="section-title">最近任务</div>
-            <table class="table">
-              <thead><tr><th>编号</th><th>单位</th><th>状态</th><th>结论</th></tr></thead>
-              <tbody id="dash-tasks-tbody"></tbody>
-            </table>
+            <div id="dash-recent"></div>
           </div>
         </div>
 
         <div class="card mt-6 fade-in fade-in-4">
           <div class="section-title">五维核查范式</div>
-          <div class="grid-3 mt-3">
+          <div class="grid-3 mt-3" style="gap:16px">
             <div>
-              <div class="stamp stamp-seal">一</div>
-              <div class="serif mt-3" style="font-size:15px;font-weight:600">总体合规性</div>
-              <div class="text-sm muted mt-1">真实性 · 年度一致 · 正式性 · 要素完整</div>
+              <span class="badge badge-brand">一</span>
+              <div style="font-weight:600;font-size:14px;margin-top:10px">总体合规性</div>
+              <div class="text-sm text-muted mt-2">真实性 · 年度一致 · 正式性 · 要素完整</div>
             </div>
             <div>
-              <div class="stamp stamp-seal">二</div>
-              <div class="serif mt-3" style="font-size:15px;font-weight:600">相关性核查</div>
-              <div class="text-sm muted mt-1">组织 · 预算 · 收支 · 采购 · 资产 · 监督</div>
+              <span class="badge badge-brand">二</span>
+              <div style="font-weight:600;font-size:14px;margin-top:10px">相关性核查</div>
+              <div class="text-sm text-muted mt-2">组织 · 预算 · 收支 · 采购 · 资产 · 监督</div>
             </div>
             <div>
-              <div class="stamp stamp-seal">三</div>
-              <div class="serif mt-3" style="font-size:15px;font-weight:600">评分合规性</div>
-              <div class="text-sm muted mt-1">轮岗扣分 · 补充指标 · 时点判断</div>
+              <span class="badge badge-brand">三</span>
+              <div style="font-weight:600;font-size:14px;margin-top:10px">评分合规性</div>
+              <div class="text-sm text-muted mt-2">轮岗扣分 · 补充指标 · 时点判断</div>
             </div>
             <div>
-              <div class="stamp stamp-seal">四</div>
-              <div class="serif mt-3" style="font-size:15px;font-weight:600">复核规范性</div>
-              <div class="text-sm muted mt-1">权限 · 分离 · 内容 · 流程</div>
+              <span class="badge badge-brand">四</span>
+              <div style="font-weight:600;font-size:14px;margin-top:10px">复核规范性</div>
+              <div class="text-sm text-muted mt-2">权限 · 分离 · 内容 · 流程</div>
             </div>
             <div>
-              <div class="stamp stamp-seal">五</div>
-              <div class="serif mt-3" style="font-size:15px;font-weight:600">报告编报合规</div>
-              <div class="text-sm muted mt-1">信息 · 内控描述 · 整改填报</div>
+              <span class="badge badge-brand">五</span>
+              <div style="font-weight:600;font-size:14px;margin-top:10px">报告编报合规</div>
+              <div class="text-sm text-muted mt-2">信息 · 内控描述 · 整改填报</div>
             </div>
-            <div style="border:1px dashed var(--rule);padding:var(--space-4)">
-              <div class="text-xs muted code" style="letter-spacing:0.15em">CURRENT</div>
-              <div class="serif mt-2" id="dash-system-status">检测中…</div>
+            <div style="padding:14px;background:var(--bg);border-radius:10px">
+              <div class="text-xs text-faint" style="font-family:var(--font-mono)">SYSTEM</div>
+              <div style="margin-top:4px;font-size:13px" id="dash-system-status">检测中…</div>
             </div>
           </div>
         </div>
@@ -157,40 +232,40 @@
     <!-- 任务列表 -->
     <section id="page-tasks" class="page-section hidden">
       <header class="page-header">
-        <div class="page-eyebrow">TASKS · 核查任务</div>
+        <div class="page-eyebrow">TASKS</div>
         <div class="page-header-row">
           <div>
             <h1 class="page-title">核查任务</h1>
-            <div class="page-sub">一个任务对应一个被检查单位的一次内控评价复核。</div>
+            <p class="page-sub">一个任务对应一个被检查单位的一次内控评价复核。</p>
           </div>
-          <button class="btn btn-seal" id="open-create-task">＋ 新建任务</button>
+          <button class="btn btn-primary" id="open-create-task">+ 新建任务</button>
         </div>
       </header>
       <div class="page-body">
-        <div class="card">
+        <div class="card" style="padding:0;overflow:hidden">
           <table class="table">
             <thead>
-              <tr><th>编号</th><th>被检查单位</th><th>任务名</th><th>年度</th><th>状态</th><th>结论摘要</th><th></th></tr>
+              <tr><th style="width:80px">编号</th><th>被检查单位</th><th>任务名</th><th>年度</th><th>状态</th><th>结论摘要</th><th style="width:40px"></th></tr>
             </thead>
             <tbody id="tasks-tbody">
-              <tr><td colspan="7" class="empty-state">加载中⋯</td></tr>
+              <tr><td colspan="7" class="empty-state">加载中…</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </section>
 
-    <!-- 任务工作台（详情）-->
+    <!-- 任务工作台 -->
     <section id="page-task-workspace" class="page-section hidden">
       <header class="page-header">
-        <div class="flex items-center gap-3 mb-2">
+        <div class="flex items-center gap-3 mb-3">
           <button class="btn btn-ghost btn-sm" id="back-to-tasks">← 返回任务列表</button>
-          <span class="text-xs muted code" id="tw-task-id"></span>
+          <span class="code-id" id="tw-task-id"></span>
         </div>
         <div class="page-header-row">
           <div>
             <h1 class="page-title" id="tw-title"></h1>
-            <div class="page-sub" id="tw-meta"></div>
+            <p class="page-sub" id="tw-meta"></p>
           </div>
           <div class="action-bar" id="tw-actions"></div>
         </div>
@@ -209,9 +284,8 @@
           <div class="card">
             <div class="section-title">核查结论</div>
             <div class="callout callout-info" id="tw-summary"></div>
-            <div class="rule-double"></div>
-            <div class="section-title">维度分布</div>
-            <div id="tw-dimension-breakdown" class="grid-3 mt-3"></div>
+            <div class="section-title mt-6">维度分布</div>
+            <div id="tw-dimension-breakdown" class="grid-3"></div>
           </div>
         </div>
 
@@ -219,7 +293,7 @@
         <div id="tw-materials" class="subtab-panel hidden">
           <div class="card mb-4">
             <div class="section-title">上传佐证材料</div>
-            <div class="form-hint mb-3">必须为每份材料绑定一个评价指标。系统会自动抽取公章、签字、日期、文号等关键要素。</div>
+            <p class="text-sm text-muted mb-4">必须为每份材料绑定一个评价指标。系统自动抽取公章、签字、日期、文号等关键要素。</p>
             <form id="material-upload-form" class="grid-3">
               <div>
                 <label class="form-label">绑定指标</label>
@@ -229,17 +303,17 @@
                 <label class="form-label">材料文件</label>
                 <input type="file" id="md-file" class="form-input" accept=".txt,.md,.docx,.pdf,.xlsx" required />
               </div>
-              <div class="flex" style="align-items:end">
-                <button type="submit" class="btn btn-seal w-full">上 传</button>
+              <div style="display:flex;align-items:flex-end">
+                <button type="submit" class="btn btn-primary w-full">上传</button>
               </div>
             </form>
             <div id="md-status" class="text-sm mt-3"></div>
           </div>
 
-          <div class="card">
-            <div class="flex justify-between items-center mb-3">
+          <div class="card" style="padding:0">
+            <div class="flex justify-between items-center" style="padding:16px 24px;border-bottom:1px solid var(--divider)">
               <div class="section-title" style="margin-bottom:0">已上传材料</div>
-              <button id="tw-run-btn" class="btn btn-seal">▶ 触发 AI 核查</button>
+              <button id="tw-run-btn" class="btn btn-primary">▶ 触发 AI 核查</button>
             </div>
             <table class="table">
               <thead><tr><th>编号</th><th>文件</th><th>绑定指标</th><th>关键要素</th></tr></thead>
@@ -264,7 +338,7 @@
             </div>
             <div class="triage-detail" id="finding-detail">
               <div class="triage-empty">
-                <div class="triage-empty-glyph">⌬</div>
+                <div class="triage-empty-glyph">▦</div>
                 <div>从左侧列表选择一条发现<br/>进行复核标注或整改跟踪</div>
               </div>
             </div>
@@ -273,23 +347,23 @@
       </div>
     </section>
 
-    <!-- 评价指标库 -->
+    <!-- 评价指标 -->
     <section id="page-indicators" class="page-section hidden">
       <header class="page-header">
-        <div class="page-eyebrow">KNOWLEDGE · 评价指标</div>
+        <div class="page-eyebrow">KNOWLEDGE</div>
         <div class="page-header-row">
           <div>
             <h1 class="page-title">评价指标库</h1>
-            <div class="page-sub">编报指南附件 1/2 中的评价指标，AI 判断的基准。</div>
+            <p class="page-sub">编报指南附件 1/2 中的评价指标，AI 判断的基准。</p>
           </div>
-          <label class="btn btn-ghost">
+          <label class="btn btn-secondary">
             ⇪ 批量导入 JSON
             <input type="file" id="import-indicators" accept=".json" hidden />
           </label>
         </div>
       </header>
       <div class="page-body">
-        <div class="card">
+        <div class="card" style="padding:0;overflow:hidden">
           <table class="table">
             <thead><tr><th>指标编号</th><th>层级</th><th>分类</th><th>名称</th><th>满分</th><th>必需材料</th></tr></thead>
             <tbody id="indicators-tbody"></tbody>
@@ -298,23 +372,23 @@
       </div>
     </section>
 
-    <!-- 问题清单库 -->
+    <!-- 问题清单 -->
     <section id="page-check-items" class="page-section hidden">
       <header class="page-header">
-        <div class="page-eyebrow">KNOWLEDGE · 问题清单</div>
+        <div class="page-eyebrow">KNOWLEDGE</div>
         <div class="page-header-row">
           <div>
             <h1 class="page-title">问题清单库</h1>
-            <div class="page-sub">客户提供的真实性 + 相关性核查清单，AI 的「考题」。</div>
+            <p class="page-sub">客户提供的真实性 + 相关性核查清单，AI 的「考题」。</p>
           </div>
-          <label class="btn btn-ghost">
+          <label class="btn btn-secondary">
             ⇪ 批量导入 JSON
             <input type="file" id="import-items" accept=".json" hidden />
           </label>
         </div>
       </header>
       <div class="page-body">
-        <div class="card">
+        <div class="card" style="padding:0;overflow:hidden">
           <table class="table">
             <thead><tr><th>编号</th><th>维度</th><th>子类</th><th>描述</th><th>方法</th><th>风险</th></tr></thead>
             <tbody id="items-tbody"></tbody>
@@ -323,123 +397,203 @@
       </div>
     </section>
 
-    <!-- 用户管理 -->
-    <section id="page-users" class="page-section hidden">
+    <!-- ============================================================
+         后台管理控制台（一站式）
+    ============================================================ -->
+    <section id="page-console" class="page-section hidden">
       <header class="page-header">
-        <div class="page-eyebrow">ADMIN · 用户</div>
+        <div class="page-eyebrow">ADMIN CONSOLE</div>
         <div class="page-header-row">
           <div>
-            <h1 class="page-title">用户管理</h1>
-            <div class="page-sub">超级管理员可创建审查员、被检查单位与只读用户。</div>
+            <h1 class="page-title">后台管理</h1>
+            <p class="page-sub">集中管理 LLM 接入、用户与权限、操作日志、系统信息。</p>
           </div>
         </div>
       </header>
-      <div class="page-body page-body-narrow">
-        <div class="card mb-5">
-          <div class="section-title">新建用户</div>
-          <form id="user-form" class="grid-2">
-            <div><label class="form-label">用户名</label><input name="username" class="form-input" required /></div>
-            <div><label class="form-label">初始密码</label><input name="password" type="password" class="form-input" required /></div>
-            <div>
-              <label class="form-label">角色</label>
-              <select name="role" class="form-select" required>
-                <option value="">— 选择角色 —</option>
-                <option value="super_admin">超级管理员</option>
-                <option value="auditor">审查员</option>
-                <option value="unit">被检查单位</option>
-                <option value="readonly">只读用户</option>
-              </select>
-            </div>
-            <div><label class="form-label">姓名（选填）</label><input name="full_name" class="form-input" /></div>
-            <div style="grid-column:1/3"><button type="submit" class="btn btn-seal">创 建</button></div>
-          </form>
-          <div id="user-form-status" class="text-sm mt-3"></div>
-        </div>
 
-        <div class="card">
-          <div class="section-title">现有用户</div>
-          <table class="table">
-            <thead><tr><th>编号</th><th>账号</th><th>角色</th><th>姓名</th><th>状态</th></tr></thead>
-            <tbody id="users-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- 操作日志 -->
-    <section id="page-audit-logs" class="page-section hidden">
-      <header class="page-header">
-        <div class="page-eyebrow">ADMIN · 审计</div>
-        <div class="page-header-row">
-          <div>
-            <h1 class="page-title">操作日志</h1>
-            <div class="page-sub">全程留痕可溯源 · 最近 100 条</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" id="refresh-audit">↻ 刷新</button>
-        </div>
-      </header>
       <div class="page-body">
-        <div class="card">
-          <table class="table">
-            <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>对象</th><th>详情</th></tr></thead>
-            <tbody id="audit-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+        <div class="console">
+          <nav class="console-nav">
+            <div class="console-nav-section">
+              <div class="console-nav-label">配置</div>
+              <button class="console-nav-item active" data-cnav="llm">大语言模型</button>
+              <button class="console-nav-item" data-cnav="system">系统信息</button>
+            </div>
+            <div class="console-nav-section">
+              <div class="console-nav-label">用户与权限</div>
+              <button class="console-nav-item" data-cnav="users">用户</button>
+              <button class="console-nav-item" data-cnav="units">单位</button>
+            </div>
+            <div class="console-nav-section">
+              <div class="console-nav-label">追溯</div>
+              <button class="console-nav-item" data-cnav="audit">操作日志</button>
+            </div>
+          </nav>
 
-    <!-- 系统设置（LLM）-->
-    <section id="page-settings" class="page-section hidden">
-      <header class="page-header">
-        <div class="page-eyebrow">ADMIN · LLM 配置</div>
-        <div class="page-header-row">
-          <div>
-            <h1 class="page-title">系统设置</h1>
-            <div class="page-sub">配置 DeepSeek V4 Pro API Key 后立即生效，无需重启。后端只存储 Key，前端不回显明文。</div>
+          <div class="console-body">
+            <!-- LLM 配置 -->
+            <div id="console-llm" class="console-panel">
+              <div class="console-section">
+                <div class="console-section-head">
+                  <h2 class="console-section-title">大语言模型接入</h2>
+                  <p class="console-section-desc">
+                    配置 DeepSeek V4 Pro API Key 后立即生效，无需重启。
+                    后端只存储 Key，前端永不回显明文。
+                  </p>
+                </div>
+                <form id="llm-form">
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">服务商</div>
+                      <div class="kv-key-sub">选择 LLM 厂商</div>
+                    </div>
+                    <div class="kv-value">
+                      <select name="provider" class="form-select">
+                        <option value="deepseek">DeepSeek V4 Pro（推荐）</option>
+                        <option value="claude">Claude（备选）</option>
+                        <option value="stub">Stub（离线兜底，不调 LLM）</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">模型</div>
+                      <div class="kv-key-sub">模型字符串</div>
+                    </div>
+                    <div class="kv-value">
+                      <input name="model" class="form-input" placeholder="deepseek-v4-pro" />
+                    </div>
+                  </div>
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">Base URL</div>
+                      <div class="kv-key-sub">兼容 OpenAI 格式的端点</div>
+                    </div>
+                    <div class="kv-value">
+                      <input name="base_url" class="form-input" placeholder="https://api.deepseek.com/v1" />
+                    </div>
+                  </div>
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">API Key</div>
+                      <div class="kv-key-sub">Bearer token / sk-...</div>
+                    </div>
+                    <div class="kv-value">
+                      <input name="api_key" type="password" class="form-input" placeholder="留空表示不修改" />
+                      <div class="form-hint" id="llm-key-hint"></div>
+                    </div>
+                  </div>
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">推理模式</div>
+                      <div class="kv-key-sub">影响响应速度与质量</div>
+                    </div>
+                    <div class="kv-value">
+                      <select name="thinking_mode" class="form-select">
+                        <option value="non_think">Non-think（快速响应）</option>
+                        <option value="think_high">Think High（逻辑分析）</option>
+                        <option value="think_max">Think Max（最大推理预算）</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="action-bar mt-5">
+                    <button type="submit" class="btn btn-primary">保存配置</button>
+                    <button type="button" id="llm-test" class="btn btn-secondary">测试连接</button>
+                  </div>
+                  <div id="llm-status" class="text-sm mt-3"></div>
+                </form>
+              </div>
+            </div>
+
+            <!-- 系统信息 -->
+            <div id="console-system" class="console-panel hidden">
+              <div class="console-section">
+                <div class="console-section-head">
+                  <h2 class="console-section-title">系统信息</h2>
+                  <p class="console-section-desc">运行时配置与依赖状态。</p>
+                </div>
+                <div id="system-info"></div>
+              </div>
+            </div>
+
+            <!-- 用户 -->
+            <div id="console-users" class="console-panel hidden">
+              <div class="console-section">
+                <div class="console-section-head">
+                  <h2 class="console-section-title">用户管理</h2>
+                  <p class="console-section-desc">创建审查员、被检查单位、只读用户。</p>
+                </div>
+
+                <form id="user-form" class="grid-2 mb-5">
+                  <div><label class="form-label">账号</label><input name="username" class="form-input" required /></div>
+                  <div><label class="form-label">初始密码</label><input name="password" type="password" class="form-input" required /></div>
+                  <div>
+                    <label class="form-label">角色</label>
+                    <select name="role" class="form-select" required>
+                      <option value="">— 选择角色 —</option>
+                      <option value="super_admin">超级管理员</option>
+                      <option value="auditor">审查员</option>
+                      <option value="unit">被检查单位</option>
+                      <option value="readonly">只读用户</option>
+                    </select>
+                  </div>
+                  <div><label class="form-label">姓名（选填）</label><input name="full_name" class="form-input" /></div>
+                  <div style="grid-column:1/3"><button type="submit" class="btn btn-primary">创建用户</button></div>
+                </form>
+                <div id="user-form-status" class="text-sm mb-4"></div>
+
+                <table class="table">
+                  <thead><tr><th>编号</th><th>账号</th><th>角色</th><th>姓名</th><th>状态</th></tr></thead>
+                  <tbody id="users-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 单位 -->
+            <div id="console-units" class="console-panel hidden">
+              <div class="console-section">
+                <div class="console-section-head">
+                  <h2 class="console-section-title">被检查单位</h2>
+                  <p class="console-section-desc">维护本平台受理的被检查单位档案。</p>
+                </div>
+
+                <form id="unit-form" class="grid-3 mb-5">
+                  <div><label class="form-label">单位名称</label><input name="name" class="form-input" required /></div>
+                  <div><label class="form-label">单位编码</label><input name="code" class="form-input" /></div>
+                  <div>
+                    <label class="form-label">级别</label>
+                    <select name="level" class="form-select">
+                      <option>单位</option><option>部门</option>
+                    </select>
+                  </div>
+                  <div style="grid-column:1/4"><button type="submit" class="btn btn-primary">创建单位</button></div>
+                </form>
+                <div id="unit-form-status" class="text-sm mb-4"></div>
+
+                <table class="table">
+                  <thead><tr><th>编号</th><th>名称</th><th>代码</th><th>级别</th><th>创建时间</th></tr></thead>
+                  <tbody id="units-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 操作日志 -->
+            <div id="console-audit" class="console-panel hidden">
+              <div class="console-section">
+                <div class="console-section-head" style="display:flex;justify-content:space-between;align-items:center">
+                  <div>
+                    <h2 class="console-section-title">操作日志</h2>
+                    <p class="console-section-desc">全程留痕可溯源，最近 100 条记录。</p>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="refresh-audit">↻ 刷新</button>
+                </div>
+                <table class="table">
+                  <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>对象</th><th>详情</th></tr></thead>
+                  <tbody id="audit-tbody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
-      </header>
-      <div class="page-body page-body-narrow">
-        <div class="card">
-          <div class="section-title">大语言模型</div>
-          <form id="llm-form">
-            <div class="form-group">
-              <label class="form-label">服务商</label>
-              <select name="provider" class="form-select">
-                <option value="deepseek">DeepSeek V4 Pro（推荐）</option>
-                <option value="claude">Claude（备选）</option>
-                <option value="stub">Stub（离线兜底，不调 LLM）</option>
-              </select>
-            </div>
-            <div class="grid-2">
-              <div class="form-group">
-                <label class="form-label">模型</label>
-                <input name="model" class="form-input" placeholder="deepseek-v4-pro" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Base URL</label>
-                <input name="base_url" class="form-input" placeholder="https://api.deepseek.com/v1" />
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">API Key</label>
-              <input name="api_key" type="password" class="form-input" placeholder="sk-..." />
-              <div id="llm-key-hint" class="form-hint"></div>
-            </div>
-            <div class="form-group">
-              <label class="form-label">推理模式</label>
-              <select name="thinking_mode" class="form-select">
-                <option value="non_think">Non-think（快速响应）</option>
-                <option value="think_high">Think High（逻辑分析）</option>
-                <option value="think_max">Think Max（最大推理预算）</option>
-              </select>
-            </div>
-            <div class="action-bar mt-5">
-              <button type="submit" class="btn btn-seal">保存配置</button>
-              <button type="button" id="llm-test" class="btn btn-ghost">测试连接</button>
-            </div>
-            <div id="llm-status" class="text-sm mt-3"></div>
-          </form>
         </div>
       </div>
     </section>
@@ -447,13 +601,11 @@
   </main>
 </div>
 
-<!-- ============================================================
-     创建任务 模态
-============================================================ -->
+<!-- 创建任务模态 -->
 <div id="create-task-modal" class="modal-overlay hidden">
-  <div class="modal" style="max-width:540px">
+  <div class="modal">
     <div class="modal-title">新建核查任务</div>
-    <div class="modal-sub">三步：选定单位 → 命名任务 → 上传材料</div>
+    <div class="modal-sub">三步完成：选择单位 → 命名任务 → 进入工作台</div>
 
     <form id="task-create-form">
       <div class="form-group">
@@ -461,15 +613,15 @@
         <select name="unit_id" id="ct-unit-select" class="form-select" required>
           <option value="">— 选择单位 —</option>
         </select>
-        <button type="button" class="btn-link mt-2" id="ct-new-unit">＋ 新建单位</button>
+        <button type="button" class="btn-link mt-2" id="ct-new-unit">+ 新建单位</button>
       </div>
-      <div id="ct-new-unit-form" class="hidden mb-4" style="background:var(--paper-dark);padding:var(--space-3)">
+      <div id="ct-new-unit-form" class="hidden mb-4" style="background:var(--bg);padding:12px;border-radius:8px">
         <div class="grid-2">
           <input name="new_unit_name" placeholder="单位名称" class="form-input" />
           <input name="new_unit_code" placeholder="单位编码（选填）" class="form-input" />
         </div>
-        <button type="button" id="ct-create-unit" class="btn btn-sm btn-ghost mt-2">创建单位</button>
-        <span id="ct-unit-status" class="text-xs muted ml-2"></span>
+        <button type="button" id="ct-create-unit" class="btn btn-secondary btn-sm mt-3">创建单位</button>
+        <span id="ct-unit-status" class="text-sm text-muted" style="margin-left:8px"></span>
       </div>
       <div class="grid-2">
         <div class="form-group">
@@ -481,9 +633,9 @@
           <input name="eval_year" type="number" value="2025" min="2000" max="2099" class="form-input" required />
         </div>
       </div>
-      <div id="ct-error" class="callout hidden mb-3"></div>
+      <div id="ct-error" class="callout callout-error hidden mb-3"></div>
       <div class="action-bar">
-        <button type="submit" class="btn btn-seal">创建并进入工作台</button>
+        <button type="submit" class="btn btn-primary">创建并进入工作台</button>
         <button type="button" class="btn btn-ghost" data-close-modal="#create-task-modal">取消</button>
       </div>
     </form>
