@@ -192,6 +192,11 @@ document.getElementById("check-form").addEventListener("submit", async ev => {
   }
 });
 
+const STATUS_LABEL = {
+  open: "新建", assigned: "已下发", fixing: "整改中",
+  reviewing: "待复核", resolved: "已销号", rejected: "已打回",
+};
+
 function renderCheckResult(task) {
   const box = document.getElementById("check-result");
   box.classList.remove("hidden");
@@ -202,22 +207,212 @@ function renderCheckResult(task) {
   const tbody = document.getElementById("issues-tbody");
   tbody.innerHTML = "";
   if (!task.issues.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-emerald-600 py-6">✓ 未发现疑点。</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-emerald-600 py-6">✓ 未发现疑点。</td></tr>`;
     return;
   }
   task.issues.forEach((i, idx) => {
-    tbody.appendChild(el(`
+    const row = el(`
       <tr>
         <td class="font-mono text-xs">${idx + 1}</td>
         <td>${esc(i.description)}<div class="text-xs text-slate-400 mt-1">规则：${esc(i.rule_id)} · ${i.source === "rigid" ? "刚性" : i.source === "soft" ? "柔性(LLM)" : i.source}</div></td>
         <td class="text-xs text-slate-600">${esc(i.location || "—")}</td>
-        <td><span class="cat-tag">${esc(i.category)}</span></td>
         <td><span class="badge badge-${i.risk_level}">${esc(i.risk_level)}</span></td>
+        <td class="text-xs"><span class="cat-tag">${esc(STATUS_LABEL[i.handle_status] || i.handle_status)}</span></td>
         <td class="text-xs">${esc(i.suggestion || "—")}</td>
+        <td><button class="btn-secondary text-xs" data-issue="${i.id}">协同复核</button></td>
       </tr>
-    `));
+    `);
+    row.querySelector("button").addEventListener("click", () => openIssueModal(i.id));
+    tbody.appendChild(row);
   });
 }
+
+// ─── 协同复核模态 ─────────────────────────────────────
+let _modalIssueId = null;
+
+async function openIssueModal(issueId) {
+  _modalIssueId = issueId;
+  document.getElementById("issue-modal").classList.remove("hidden");
+  await refreshIssueModal();
+}
+
+document.getElementById("modal-close").addEventListener("click", () => {
+  document.getElementById("issue-modal").classList.add("hidden");
+  _modalIssueId = null;
+});
+
+async function refreshIssueModal() {
+  if (!_modalIssueId) return;
+  const issue = await api(`/issues/${_modalIssueId}`);
+  document.getElementById("modal-issue-title").textContent = issue.description;
+  document.getElementById("m-rule").textContent = issue.rule_id;
+  document.getElementById("m-risk").innerHTML = `<span class="badge badge-${issue.risk_level}">${esc(issue.risk_level)}</span>`;
+  document.getElementById("m-loc").textContent = issue.location || "—";
+  document.getElementById("m-status").textContent = STATUS_LABEL[issue.handle_status] || issue.handle_status;
+  document.getElementById("m-sugg").textContent = issue.suggestion || "—";
+
+  const fixBox = document.getElementById("m-fix-note-box");
+  fixBox.style.display = issue.fix_note ? "" : "none";
+  document.getElementById("m-fix-note").textContent = issue.fix_note || "";
+
+  const reviewBox = document.getElementById("m-review-note-box");
+  reviewBox.style.display = issue.review_note ? "" : "none";
+  document.getElementById("m-review-note").textContent = issue.review_note || "";
+
+  // 渲染按钮组（根据状态 + 当前用户角色）
+  renderActionButtons(issue);
+  await loadComments();
+}
+
+const ACTION_BUTTONS = {
+  // status -> [{ action, label, color, adminOnly, needsNote }, ...]
+  open: [
+    { action: "assign", label: "指派", adminOnly: true, needsAssignee: true },
+  ],
+  assigned: [
+    { action: "start", label: "开始整改" },
+    { action: "assign", label: "改派", adminOnly: true, needsAssignee: true },
+  ],
+  fixing: [
+    { action: "submit", label: "提交整改", needsNote: true, noteLabel: "整改说明" },
+  ],
+  reviewing: [
+    { action: "approve", label: "通过销号", adminOnly: true, needsNote: true,
+      noteLabel: "复核意见（可空）", optionalNote: true, color: "emerald" },
+    { action: "reject", label: "打回", adminOnly: true, needsNote: true,
+      noteLabel: "打回原因（必填）", color: "rose" },
+  ],
+  rejected: [
+    { action: "reopen", label: "重新整改" },
+  ],
+  resolved: [],
+};
+
+function renderActionButtons(issue) {
+  const box = document.getElementById("m-action-buttons");
+  const role = Auth.user?.role;
+  const isAdmin = role === "admin";
+  const actions = ACTION_BUTTONS[issue.handle_status] || [];
+  if (actions.length === 0) {
+    box.innerHTML = `<span class="text-sm text-slate-500">当前状态无可执行操作。</span>`;
+    return;
+  }
+  box.innerHTML = "";
+  actions.forEach(a => {
+    if (a.adminOnly && !isAdmin) return;
+    const btn = el(`<button class="btn-primary" style="${a.color === 'rose' ? 'background:#dc2626' : a.color === 'emerald' ? 'background:#059669' : ''}">${esc(a.label)}</button>`);
+    btn.addEventListener("click", () => openActionModal(issue, a));
+    box.appendChild(btn);
+  });
+}
+
+async function openActionModal(issue, action) {
+  document.getElementById("am-title").textContent = action.label;
+  document.getElementById("am-error").classList.add("hidden");
+  document.getElementById("am-note").value = "";
+
+  const assigneeBox = document.getElementById("am-assignee-box");
+  const noteBox = document.getElementById("am-note-box");
+  const noteLabel = document.getElementById("am-note-label");
+
+  if (action.needsAssignee) {
+    assigneeBox.style.display = "";
+    const users = await api("/users");
+    const sel = document.getElementById("am-assignee");
+    sel.innerHTML = users
+      .filter(u => u.is_active && u.role !== "admin")
+      .map(u => `<option value="${u.id}">${esc(u.username)}（${esc(u.role)}）${u.full_name ? ' - ' + esc(u.full_name) : ''}</option>`)
+      .join("") || `<option value="">— 无可选用户 —</option>`;
+  } else {
+    assigneeBox.style.display = "none";
+  }
+
+  if (action.needsNote) {
+    noteBox.style.display = "";
+    noteLabel.textContent = action.noteLabel || "说明";
+  } else {
+    noteBox.style.display = "none";
+  }
+
+  document.getElementById("action-modal").classList.remove("hidden");
+
+  document.getElementById("am-confirm").onclick = async () => {
+    const payload = {};
+    if (action.needsAssignee) {
+      const id = parseInt(document.getElementById("am-assignee").value);
+      if (!id) {
+        showActionError("请选择被指派人"); return;
+      }
+      payload.assignee_id = id;
+    }
+    if (action.needsNote) {
+      const note = document.getElementById("am-note").value.trim();
+      if (!note && !action.optionalNote) {
+        showActionError(`请填写${action.noteLabel || "说明"}`); return;
+      }
+      if (action.action === "submit") payload.fix_note = note;
+      else payload.review_note = note;
+    }
+    try {
+      await api(`/issues/${issue.id}/${action.action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      document.getElementById("action-modal").classList.add("hidden");
+      await refreshIssueModal();
+    } catch (e) {
+      showActionError(e.message);
+    }
+  };
+}
+
+function showActionError(msg) {
+  const e = document.getElementById("am-error");
+  e.textContent = msg;
+  e.classList.remove("hidden");
+}
+
+document.getElementById("am-cancel").addEventListener("click", () => {
+  document.getElementById("action-modal").classList.add("hidden");
+});
+
+async function loadComments() {
+  if (!_modalIssueId) return;
+  const comments = await api(`/issues/${_modalIssueId}/comments`);
+  const box = document.getElementById("m-comments");
+  if (!comments.length) {
+    box.innerHTML = `<div class="text-sm text-slate-400 text-center py-4">暂无批注</div>`;
+    return;
+  }
+  box.innerHTML = comments.map(c => `
+    <div class="bg-slate-50 rounded p-2 border border-slate-200">
+      <div class="flex items-baseline justify-between">
+        <span class="font-medium text-sm">${esc(c.author_name)}</span>
+        <span class="text-xs text-slate-400">${fmtTime(c.created_at)}</span>
+      </div>
+      <div class="text-sm text-slate-700 mt-1 whitespace-pre-wrap">${esc(c.body)}</div>
+    </div>`).join("");
+  box.scrollTop = box.scrollHeight;
+}
+
+document.getElementById("m-comment-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const input = document.getElementById("m-comment-body");
+  const body = input.value.trim();
+  if (!body || !_modalIssueId) return;
+  try {
+    await api(`/issues/${_modalIssueId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    input.value = "";
+    await loadComments();
+  } catch (e) {
+    alert("发送失败：" + e.message);
+  }
+});
 
 // ─── 联动校验 ─────────────────────────────────────────
 const CHAIN_CONFIGS = {

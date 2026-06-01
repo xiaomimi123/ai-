@@ -129,8 +129,37 @@ class IssueRecord(Base):
     suggestion: Mapped[str] = mapped_column(Text, default="")
     rule_id: Mapped[str] = mapped_column(String(64), default="")
     source: Mapped[str] = mapped_column(String(16), default="rigid")
-    # 整改流转：open|fixing|resolved
+    # 整改流转（§3.7）：open(新建) -> assigned(已下发) -> fixing(整改中)
+    #                  -> reviewing(待复核) -> resolved(已销号) | rejected(打回)
     handle_status: Mapped[str] = mapped_column(String(16), default="open")
+    assignee_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    reviewer_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    fix_note: Mapped[str] = mapped_column(Text, default="")        # 整改说明（被复核人填）
+    review_note: Mapped[str] = mapped_column(Text, default="")     # 复核意见（复核人填）
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
     task: Mapped[Optional["CheckTask"]] = relationship(back_populates="issues")
     chain_task: Mapped[Optional["ChainCheckTask"]] = relationship(back_populates="issues")
+    comments: Mapped[List["IssueComment"]] = relationship(
+        back_populates="issue", cascade="all, delete-orphan", order_by="IssueComment.id"
+    )
+
+
+class IssueComment(Base):
+    """在线批注：附在某条问题上的评论线程（§3.7 协同复核）。"""
+    __tablename__ = "issue_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    author_name: Mapped[str] = mapped_column(String(64), default="")  # 冗余存名
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    issue: Mapped["IssueRecord"] = relationship(back_populates="comments")

@@ -6,6 +6,7 @@ from app.models.entities import (
     ChainCheckTask,
     CheckTask,
     Document,
+    IssueComment,
     IssueRecord,
     User,
 )
@@ -13,5 +14,5 @@ from app.models.entities import (
 __all__ = [
     "Base", "SessionLocal", "engine", "get_db", "init_db",
     "User", "AuthToken", "AuditLog",
-    "Document", "CheckTask", "ChainCheckTask", "IssueRecord",
+    "Document", "CheckTask", "ChainCheckTask", "IssueRecord", "IssueComment",
 ]

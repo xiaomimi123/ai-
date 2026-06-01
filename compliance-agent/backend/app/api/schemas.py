@@ -35,9 +35,41 @@ class IssueOut(BaseModel):
     rule_id: str
     source: str
     handle_status: str
+    assignee_id: Optional[int] = None
+    reviewer_id: Optional[int] = None
+    fix_note: str = ""
+    review_note: str = ""
 
     class Config:
         from_attributes = True
+
+
+class IssueCommentOut(BaseModel):
+    id: int
+    issue_id: int
+    author_id: int
+    author_name: str
+    body: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class IssueAssignRequest(BaseModel):
+    assignee_id: int
+
+
+class IssueSubmitRequest(BaseModel):
+    fix_note: str
+
+
+class IssueReviewRequest(BaseModel):
+    review_note: str = ""
+
+
+class CommentCreateRequest(BaseModel):
+    body: str
 
 
 class CheckTaskOut(BaseModel):
