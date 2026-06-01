@@ -11,16 +11,20 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
+    ChainCheckRequest,
+    ChainCheckTaskOut,
     CheckRequest,
     CheckTaskOut,
     DocumentOut,
     TemplateOut,
 )
 from app.core.config import settings
-from app.models import CheckTask, Document, get_db
+from app.crosscheck import ProcurementChain
+from app.models import ChainCheckTask, CheckTask, Document, get_db
 from app.parsers import SUPPORTED_EXTENSIONS
 from app.parsers.dispatcher import UnsupportedFormatError, parse
 from app.rules import list_templates
+from app.services.chain_service import run_chain_check
 from app.services.check_service import run_check
 from app.services.report import build_report_docx
 
@@ -94,6 +98,30 @@ def get_check(task_id: int, db: Session = Depends(get_db)) -> CheckTask:
     task = db.get(CheckTask, task_id)
     if not task:
         raise HTTPException(404, "检查任务不存在")
+    return task
+
+
+@router.post("/chain-checks", response_model=ChainCheckTaskOut)
+def create_chain_check(req: ChainCheckRequest, db: Session = Depends(get_db)) -> ChainCheckTask:
+    if not any([req.tender_doc_id, req.bid_doc_id, req.eval_doc_id, req.contract_doc_id]):
+        raise HTTPException(400, "至少提供一份招采文档")
+    for doc_id in (req.tender_doc_id, req.bid_doc_id, req.eval_doc_id, req.contract_doc_id):
+        if doc_id is not None and db.get(Document, doc_id) is None:
+            raise HTTPException(404, f"文档 {doc_id} 不存在")
+    chain = ProcurementChain(
+        tender_doc_id=req.tender_doc_id,
+        bid_doc_id=req.bid_doc_id,
+        eval_doc_id=req.eval_doc_id,
+        contract_doc_id=req.contract_doc_id,
+    )
+    return run_chain_check(db, chain)
+
+
+@router.get("/chain-checks/{task_id}", response_model=ChainCheckTaskOut)
+def get_chain_check(task_id: int, db: Session = Depends(get_db)) -> ChainCheckTask:
+    task = db.get(ChainCheckTask, task_id)
+    if not task:
+        raise HTTPException(404, "联动校验任务不存在")
     return task
 
 

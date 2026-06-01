@@ -5,6 +5,8 @@ import pytest
 
 from tests.samples import (
     BAD_BID, BAD_CONTRACT, BAD_EVAL, BAD_INSTITUTION, BAD_TENDER,
+    CHAIN_BAD_BID, CHAIN_BAD_CONTRACT, CHAIN_BAD_EVAL,
+    CHAIN_GOOD_BID, CHAIN_GOOD_CONTRACT, CHAIN_GOOD_EVAL, CHAIN_GOOD_TENDER,
     GOOD_BID, GOOD_CONTRACT, GOOD_EVAL, GOOD_INSTITUTION, GOOD_TENDER,
 )
 
@@ -111,6 +113,51 @@ def test_bad_contract_flags_issues(client):
     assert "contract.number" in rule_ids
     assert "contract.seal" in rule_ids
     assert "contract.required_clauses" in rule_ids
+
+
+def test_procurement_chain_flags_cross_file_issues(client):
+    """Phase 3 端到端：上传 4 份招采链文档 → 跨文件比对。"""
+    tender_id = _upload(client, CHAIN_GOOD_TENDER, "t.txt", category="采购招标", subcategory="招标")
+    bid_id = _upload(client, CHAIN_BAD_BID, "b.txt", category="采购招标", subcategory="投标")
+    eval_id = _upload(client, CHAIN_BAD_EVAL, "e.txt", category="采购招标", subcategory="评标")
+    contract_id = _upload(client, CHAIN_BAD_CONTRACT, "c.txt", category="合同")
+
+    r = client.post("/api/chain-checks", json={
+        "tender_doc_id": tender_id,
+        "bid_doc_id": bid_id,
+        "eval_doc_id": eval_id,
+        "contract_doc_id": contract_id,
+    })
+    assert r.status_code == 200, r.text
+    task = r.json()
+    assert task["status"] == "done"
+    rule_ids = {i["rule_id"] for i in task["issues"]}
+    assert "chain.price_over_budget" in rule_ids
+    assert "chain.contract_party_vs_winner" in rule_ids
+    assert "chain.contract_amount_vs_bid" in rule_ids
+    assert "chain.committee_size" in rule_ids
+
+
+def test_procurement_chain_consistent_no_inconsistency(client):
+    tender_id = _upload(client, CHAIN_GOOD_TENDER, "t2.txt", category="采购招标", subcategory="招标")
+    bid_id = _upload(client, CHAIN_GOOD_BID, "b2.txt", category="采购招标", subcategory="投标")
+    eval_id = _upload(client, CHAIN_GOOD_EVAL, "e2.txt", category="采购招标", subcategory="评标")
+    contract_id = _upload(client, CHAIN_GOOD_CONTRACT, "c2.txt", category="合同")
+
+    r = client.post("/api/chain-checks", json={
+        "tender_doc_id": tender_id,
+        "bid_doc_id": bid_id,
+        "eval_doc_id": eval_id,
+        "contract_doc_id": contract_id,
+    })
+    task = r.json()
+    inconsistency = [i for i in task["issues"] if i["rule_id"] != "chain.completeness"]
+    assert inconsistency == [], [i["description"] for i in inconsistency]
+
+
+def test_chain_check_rejects_empty_input(client):
+    r = client.post("/api/chain-checks", json={})
+    assert r.status_code == 400
 
 
 def test_good_contract_fewer_issues_and_report(client):

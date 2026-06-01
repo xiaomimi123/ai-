@@ -51,6 +51,30 @@ class CheckTaskOut(BaseModel):
         from_attributes = True
 
 
+class ChainCheckRequest(BaseModel):
+    chain_type: str = "procurement"
+    tender_doc_id: Optional[int] = None
+    bid_doc_id: Optional[int] = None
+    eval_doc_id: Optional[int] = None
+    contract_doc_id: Optional[int] = None
+
+
+class ChainCheckTaskOut(BaseModel):
+    id: int
+    chain_type: str
+    tender_doc_id: Optional[int]
+    bid_doc_id: Optional[int]
+    eval_doc_id: Optional[int]
+    contract_doc_id: Optional[int]
+    status: str
+    summary: str
+    extracted_fields: str = ""
+    issues: List[IssueOut] = []
+
+    class Config:
+        from_attributes = True
+
+
 class TemplateOut(BaseModel):
     key: str
     name: str
