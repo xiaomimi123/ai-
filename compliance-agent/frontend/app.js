@@ -97,8 +97,32 @@ function navigate(hash) {
   else handleRoute();
 }
 
+// 路由权限表：列出 route → 允许的角色（不在表中 = 所有登录用户）
+const ROUTE_GUARDS = {
+  "console":      ["super_admin"],
+  "indicators":   ["super_admin", "auditor"],
+  "check-items":  ["super_admin", "auditor"],
+};
+
+function isRouteAllowed(route, user) {
+  const allow = ROUTE_GUARDS[route];
+  if (!allow) return true;
+  return user && allow.includes(user.role);
+}
+
 async function handleRoute() {
   const { route, params } = parseHash();
+
+  // 路由级权限守卫：禁止非授权角色访问敏感路由
+  if (!isRouteAllowed(route, State.user)) {
+    toast("无权访问此页面，需要更高权限", "error");
+    // 重定向回工作台，避免无限循环
+    if (location.hash !== "#/dashboard") {
+      location.replace("#/dashboard");
+      return;
+    }
+  }
+
   document.querySelectorAll(".page-section").forEach(s => s.classList.add("hidden"));
   document.querySelectorAll(".nav-link").forEach(b => {
     b.classList.toggle("active", b.dataset.route === route);
@@ -1015,8 +1039,23 @@ function renderUserCard() {
     showLogin();
   });
 
-  document.getElementById("nav-admin-section").style.display =
-    State.user.role === "super_admin" ? "" : "none";
+  // 按角色显隐侧栏每一条导航项
+  document.querySelectorAll(".nav-link").forEach(btn => {
+    const route = btn.dataset.route;
+    const visible = isRouteAllowed(route, State.user);
+    btn.style.display = visible ? "" : "none";
+  });
+  // 管理分组：里面所有项都不可见时整段隐藏
+  const adminSection = document.getElementById("nav-admin-section");
+  const adminVisible = isRouteAllowed("console", State.user);
+  adminSection.style.display = adminVisible ? "" : "none";
+  // 知识库分组：里面所有项都不可见时整段隐藏
+  const kbSection = document.querySelector('[data-nav-group="knowledge"]');
+  if (kbSection) {
+    const kbVisible = isRouteAllowed("indicators", State.user) ||
+                      isRouteAllowed("check-items", State.user);
+    kbSection.style.display = kbVisible ? "" : "none";
+  }
 }
 
 document.getElementById("login-form").addEventListener("submit", async ev => {
