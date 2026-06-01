@@ -33,19 +33,46 @@ def _ke_from_json(raw: str) -> KeyElements:
 
 
 def _retrieve_legal_basis(indicator: Optional[Indicator]) -> str:
-    """根据指标从 RAG 召回法规条款（v3 §3.1 黄金数据）。
+    """根据指标从 RAG 向量库召回法规条款（v3 §3.1、§3.4）。
 
-    当前 stub 实现：直接拼接指标的 deduct_rules + common_deductions。
-    后续可接入 Qdrant 检索。
+    检索来源：法规库上传的法规（通过 regulation_service 已 chunk 入 Qdrant）。
+    召回结果与指标自身的扣分细则 + 常见扣分情形 一起注入 LLM Prompt。
     """
     if indicator is None:
         return "（暂无指标关联法规）"
+
     parts = []
+
+    # 1) 从向量库 RAG 召回（v3 §3.4 强调"来自 RAG 检索附件 1/2"）
+    try:
+        from app.rag import get_retriever
+
+        # 多角度检索：指标名 + 子类 + 分类 + 评价办法关键词
+        query = (
+            f"{indicator.name} {indicator.category} {indicator.subcategory} "
+            f"内控评价 评价指标 扣分细则"
+        )
+        retriever = get_retriever()
+        hits = retriever.retrieve(query, top_k=5)
+        if hits:
+            rag_lines = []
+            for h in hits:
+                meta = getattr(h, "metadata", {}) or {}
+                citation = meta.get("citation") or meta.get("law_name") or meta.get("source") or "法规"
+                # 截断单条法规以控制 token
+                text = (h.text or "").strip()[:600]
+                rag_lines.append(f"[{citation}] {text}")
+            parts.append("【RAG 召回法规条款】\n" + "\n\n".join(rag_lines))
+    except Exception as exc:
+        print(f"[RAG] 召回失败: {exc}")
+
+    # 2) 指标自身的扣分细则作为黄金参照（v3 §3.1 黄金数据）
     if indicator.deduct_rules:
         parts.append(f"【评分细则】{indicator.deduct_rules}")
     if indicator.common_deductions:
         parts.append(f"【常见扣分情形】{indicator.common_deductions}")
-    return "\n".join(parts) if parts else "（暂无指标关联法规）"
+
+    return "\n\n".join(parts) if parts else "（暂无指标关联法规）"
 
 
 def run_audit(db: Session, task: AuditTask) -> AuditTask:

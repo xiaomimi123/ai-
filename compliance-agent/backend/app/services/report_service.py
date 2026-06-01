@@ -1,0 +1,370 @@
+"""核查报告生成（v3 §3.6）。
+
+按 v3 文档规定的 5 章节结构生成 Word 报告：
+封面
+第一部分：总体核查结论
+第二部分：佐证材料总体合规性核查
+第三部分：各指标相关性核查明细
+第四部分：高频风险点汇总
+第五部分：整改建议清单
+"""
+from __future__ import annotations
+
+import io
+import json
+from collections import Counter, defaultdict
+from datetime import datetime
+from typing import List, Optional
+
+from sqlalchemy.orm import Session
+
+from app.models import AuditTask, AuditUnit, Finding, Indicator, Material
+
+
+def build_report_docx(db: Session, task: AuditTask) -> bytes:
+    """生成 Word 核查报告，返回 docx 二进制内容。"""
+    from docx import Document
+    from docx.shared import Pt, Cm, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+
+    unit: AuditUnit = task.unit
+    materials: List[Material] = list(task.materials)
+    findings: List[Finding] = list(task.findings)
+
+    doc = Document()
+
+    # 中文字体设置
+    def _set_cn_font(run, name="宋体", size=12, bold=False):
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(size)
+        run.bold = bold
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), name)
+
+    def _h(text, level=1, size=18, align=WD_ALIGN_PARAGRAPH.LEFT):
+        p = doc.add_paragraph()
+        p.alignment = align
+        r = p.add_run(text)
+        _set_cn_font(r, name="黑体", size=size, bold=True)
+        return p
+
+    def _p(text, size=11, indent=True, align=WD_ALIGN_PARAGRAPH.LEFT):
+        p = doc.add_paragraph()
+        p.alignment = align
+        if indent:
+            p.paragraph_format.first_line_indent = Cm(0.74)
+        p.paragraph_format.space_after = Pt(4)
+        r = p.add_run(text)
+        _set_cn_font(r, size=size)
+        return p
+
+    def _label_value(label, value):
+        p = doc.add_paragraph()
+        r1 = p.add_run(f"{label}：")
+        _set_cn_font(r1, name="黑体", size=11, bold=True)
+        r2 = p.add_run(str(value))
+        _set_cn_font(r2, size=11)
+        return p
+
+    # ============================================================
+    # 封面
+    # ============================================================
+    for _ in range(4):
+        doc.add_paragraph()
+
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    rt = title.add_run("内部控制评价核查报告")
+    _set_cn_font(rt, name="黑体", size=28, bold=True)
+
+    subtitle = doc.add_paragraph()
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    rs = subtitle.add_run(f"{task.eval_year} 年度")
+    _set_cn_font(rs, name="楷体", size=18)
+
+    for _ in range(8):
+        doc.add_paragraph()
+
+    cover_meta = [
+        ("被检查单位", unit.name if unit else "—"),
+        ("评价年度", f"{task.eval_year} 年度"),
+        ("核查任务", task.name),
+        ("核查日期", _fmt_date(task.completed_at or task.created_at)),
+        ("核查依据", "评价指标库、问题清单库、上位法、编报指南"),
+        ("报告生成时间", _fmt_date(datetime.utcnow())),
+    ]
+    for label, value in cover_meta:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r1 = p.add_run(f"{label}：")
+        _set_cn_font(r1, name="黑体", size=12, bold=True)
+        r2 = p.add_run(str(value))
+        _set_cn_font(r2, size=12)
+
+    doc.add_page_break()
+
+    # ============================================================
+    # 第一部分 总体核查结论
+    # ============================================================
+    _h("第一部分 · 总体核查结论", size=18)
+
+    conclusion = _build_conclusion(findings)
+    _p(f"本次核查覆盖被检查单位提交的 {len(materials)} 份佐证材料，"
+       f"涉及 {_count_indicators(materials)} 个评价指标，"
+       f"AI 共检出 {len(findings)} 条疑点。")
+    _label_value("总体结论", conclusion)
+
+    # 风险分布表
+    _h("问题分布统计", level=2, size=14)
+    sev_counter = Counter(f.severity for f in findings)
+    type_counter = Counter(f.finding_type for f in findings)
+
+    sev_table = doc.add_table(rows=2, cols=4)
+    sev_table.style = "Light Grid Accent 1"
+    headers = ["风险等级", "高", "中", "低"]
+    counts = ["数量", str(sev_counter.get("高", 0)),
+              str(sev_counter.get("中", 0)),
+              str(sev_counter.get("低", 0))]
+    for i, h in enumerate(headers):
+        cell = sev_table.rows[0].cells[i]
+        cell.text = h
+        for p in cell.paragraphs:
+            for r in p.runs:
+                _set_cn_font(r, name="黑体", size=11, bold=True)
+    for i, c in enumerate(counts):
+        cell = sev_table.rows[1].cells[i]
+        cell.text = c
+        for p in cell.paragraphs:
+            for r in p.runs:
+                _set_cn_font(r, size=11)
+
+    doc.add_paragraph()
+
+    # 按类型分布
+    if type_counter:
+        _h("按问题类型分布", level=2, size=14)
+        type_table = doc.add_table(rows=1 + len(type_counter), cols=2)
+        type_table.style = "Light Grid Accent 1"
+        for i, hdr in enumerate(["问题类型", "数量"]):
+            cell = type_table.rows[0].cells[i]
+            cell.text = hdr
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    _set_cn_font(r, name="黑体", size=11, bold=True)
+        for row_i, (k, v) in enumerate(sorted(type_counter.items(), key=lambda x: -x[1]), start=1):
+            type_table.rows[row_i].cells[0].text = k
+            type_table.rows[row_i].cells[1].text = str(v)
+            for cell in type_table.rows[row_i].cells:
+                for p in cell.paragraphs:
+                    for r in p.runs:
+                        _set_cn_font(r, size=11)
+
+    doc.add_paragraph()
+    _p("（说明：本报告由 AI 核查引擎自动生成，作为辅助审查依据，"
+       "最终结论须经人工复核确认。AI 核查的是文本内容合规性，"
+       "原件真实性需结合现场核查或档案比对确认。）", size=10)
+
+    doc.add_page_break()
+
+    # ============================================================
+    # 第二部分 佐证材料总体合规性核查
+    # ============================================================
+    _h("第二部分 · 佐证材料总体合规性核查", size=18)
+    _p("本部分针对所有佐证材料的真实性、年度一致性、正式性、要素完整性，"
+       "按 4 个维度汇总核查结果。")
+
+    overall_dims = {
+        "真实性": ["真实性问题"],
+        "年度一致性": ["年度一致性问题"],
+        "正式性": ["正式性问题"],
+        "要素完整性": ["完整性问题"],
+    }
+
+    for dim_name, types in overall_dims.items():
+        dim_findings = [f for f in findings if f.finding_type in types]
+        _h(f"二·{list(overall_dims.keys()).index(dim_name)+1}  {dim_name}核查结果",
+           level=2, size=13)
+        if not dim_findings:
+            _p(f"✓ 本维度未发现问题。", size=11)
+        else:
+            _p(f"共发现 {len(dim_findings)} 条问题：", size=11)
+            _add_finding_table(doc, dim_findings, _set_cn_font)
+        doc.add_paragraph()
+
+    doc.add_page_break()
+
+    # ============================================================
+    # 第三部分 各指标相关性核查明细
+    # ============================================================
+    _h("第三部分 · 各指标相关性核查明细", size=18)
+    _p("按评价指标分组列出 AI 核查发现的相关性、合规性问题。")
+
+    # 按 indicator 分组
+    grouped: dict[int, list[Finding]] = defaultdict(list)
+    for f in findings:
+        if f.indicator_id and f.finding_type in ("相关性问题", "合规性问题", "评分合规问题", "复核规范问题"):
+            grouped[f.indicator_id].append(f)
+
+    if not grouped:
+        _p("✓ 各指标未发现相关性 / 合规性问题。")
+    else:
+        for ind_id, ind_findings in grouped.items():
+            ind = db.get(Indicator, ind_id)
+            if ind is None:
+                continue
+            _h(f"指标 {ind.indicator_code} · {ind.name}", level=2, size=13)
+            _label_value("分类", f"{ind.level} / {ind.category} / {ind.subcategory}")
+            _label_value("满分", str(ind.max_score))
+            _p(f"共发现 {len(ind_findings)} 条问题：", size=11)
+            _add_finding_table(doc, ind_findings, _set_cn_font)
+            doc.add_paragraph()
+
+    doc.add_page_break()
+
+    # ============================================================
+    # 第四部分 高频风险点汇总
+    # ============================================================
+    _h("第四部分 · 高频风险点汇总", size=18)
+    _p("按风险级别 + 类型聚合，提供整改的优先级参考。")
+
+    high_findings = [f for f in findings if f.severity == "高"]
+    _h(f"四·1  高风险问题（共 {len(high_findings)} 条）", level=2, size=13)
+    if not high_findings:
+        _p("✓ 未发现高风险问题。")
+    else:
+        _add_finding_table(doc, high_findings, _set_cn_font)
+
+    doc.add_paragraph()
+
+    # 真实性 + 完整性 高频
+    real_findings = [f for f in findings
+                     if f.finding_type in ("真实性问题", "完整性问题")
+                     and f.severity in ("高", "中")]
+    _h(f"四·2  真实性与完整性问题（共 {len(real_findings)} 条）", level=2, size=13)
+    if not real_findings:
+        _p("✓ 未发现此类问题。")
+    else:
+        _add_finding_table(doc, real_findings, _set_cn_font)
+
+    doc.add_page_break()
+
+    # ============================================================
+    # 第五部分 整改建议清单
+    # ============================================================
+    _h("第五部分 · 整改建议清单", size=18)
+    _p("按风险等级排序，列出每条问题的整改建议、建议完成时限。")
+
+    # 排序：高 > 中 > 低
+    sev_order = {"高": 0, "中": 1, "低": 2}
+    sorted_findings = sorted(findings, key=lambda f: (sev_order.get(f.severity, 9), f.id))
+    if not sorted_findings:
+        _p("✓ 本次核查未发现问题。")
+    else:
+        suggestion_table = doc.add_table(rows=1 + len(sorted_findings), cols=5)
+        suggestion_table.style = "Light Grid Accent 1"
+        for i, hdr in enumerate(["序号", "风险", "问题摘要", "整改建议", "建议时限"]):
+            cell = suggestion_table.rows[0].cells[i]
+            cell.text = hdr
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    _set_cn_font(r, name="黑体", size=10, bold=True)
+        for idx, f in enumerate(sorted_findings, 1):
+            row = suggestion_table.rows[idx]
+            row.cells[0].text = str(idx)
+            row.cells[1].text = f.severity
+            row.cells[2].text = _truncate(f.description, 80)
+            row.cells[3].text = _truncate(f.suggestion or "—", 100)
+            row.cells[4].text = _suggested_deadline(f.severity)
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    for r in p.runs:
+                        _set_cn_font(r, size=10)
+
+    doc.add_paragraph()
+    _p("（建议时限说明：高风险问题 30 日内整改完成；"
+       "中风险问题 90 日内整改完成；低风险问题可在下次评价周期内整改。）",
+       size=10)
+
+    # ============================================================
+    # 签章页
+    # ============================================================
+    doc.add_page_break()
+    for _ in range(8):
+        doc.add_paragraph()
+    foot = doc.add_paragraph()
+    foot.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = foot.add_run("核查方（盖章）：__________________________")
+    _set_cn_font(r, name="黑体", size=12)
+    for _ in range(3):
+        doc.add_paragraph()
+    foot2 = doc.add_paragraph()
+    foot2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = foot2.add_run(f"报告生成日期：{_fmt_date(datetime.utcnow())}")
+    _set_cn_font(r, size=12)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+# ============================================================
+# Helpers
+# ============================================================
+def _build_conclusion(findings: List[Finding]) -> str:
+    if not findings:
+        return "通过 — 核查未发现问题"
+    high = sum(1 for f in findings if f.severity == "高")
+    if high == 0:
+        return f"有条件通过 — 共 {len(findings)} 条疑点，需关注并整改"
+    return f"不通过 — 检出 {high} 条高风险问题，需重点整改"
+
+
+def _count_indicators(materials: List[Material]) -> int:
+    return len({m.indicator_id for m in materials if m.indicator_id})
+
+
+def _add_finding_table(doc, findings: List[Finding], set_font):
+    """通用：把一组 finding 渲染成表格。"""
+    if not findings:
+        return
+    table = doc.add_table(rows=1 + len(findings), cols=5)
+    table.style = "Light Grid Accent 1"
+    for i, hdr in enumerate(["序号", "风险", "问题描述", "材料位置", "建议"]):
+        cell = table.rows[0].cells[i]
+        cell.text = hdr
+        for p in cell.paragraphs:
+            for r in p.runs:
+                set_font(r, name="黑体", size=10, bold=True)
+    for idx, f in enumerate(findings, 1):
+        row = table.rows[idx]
+        row.cells[0].text = str(idx)
+        row.cells[1].text = f.severity
+        row.cells[2].text = _truncate(f.description, 100)
+        row.cells[3].text = _truncate(f.evidence_location or "—", 60)
+        row.cells[4].text = _truncate(f.suggestion or "—", 80)
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    set_font(r, size=10)
+
+
+def _truncate(text: str, n: int) -> str:
+    if not text:
+        return "—"
+    text = str(text)
+    return text if len(text) <= n else text[:n] + "…"
+
+
+def _fmt_date(dt) -> str:
+    if dt is None:
+        return "—"
+    if isinstance(dt, str):
+        return dt
+    try:
+        return dt.strftime("%Y 年 %m 月 %d 日")
+    except Exception:
+        return str(dt)
+
+
+def _suggested_deadline(severity: str) -> str:
+    return {"高": "30 日内", "中": "90 日内", "低": "下次评价周期"}.get(severity, "—")

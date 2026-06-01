@@ -402,11 +402,44 @@ function renderTaskActions(task) {
   if (task.status === "ai_done" || task.status === "reviewing") {
     acts.push(`<button class="btn btn-success" onclick="finalizeTask()">✓ 完成复核，定稿</button>`);
   }
-  if (task.status === "finalized" || task.status === "ai_done") {
-    acts.push(`<button class="btn btn-secondary" disabled>导出 Word 报告</button>`);
+  if (["ai_done", "reviewing", "finalized", "archived"].includes(task.status)) {
+    acts.push(`<button class="btn btn-secondary" onclick="downloadTaskReport()">导出 Word 报告</button>`);
   }
   box.innerHTML = acts.join("");
 }
+
+window.downloadTaskReport = async function() {
+  if (!State.taskId) return;
+  toast("正在生成 Word 报告…");
+  try {
+    const tok = getToken();
+    const r = await fetch(`${API}/tasks/${State.taskId}/report`, {
+      headers: { "Authorization": "Bearer " + tok },
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(text || `HTTP ${r.status}`);
+    }
+    const blob = await r.blob();
+    // 触发浏览器下载
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    // 从 Content-Disposition 解析文件名（含 RFC 5987 中文）
+    const cd = r.headers.get("Content-Disposition") || "";
+    let fname = `report_${State.taskId}.docx`;
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    if (m) fname = decodeURIComponent(m[1]);
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("✓ 报告已下载", "success");
+  } catch (e) {
+    toast(e.message || "报告下载失败", "error");
+  }
+};
 
 window.finalizeTask = async function() {
   if (!confirm("将任务定稿，之后只读？")) return;

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -23,6 +24,7 @@ from app.core.permissions import is_admin, is_auditor_or_above, is_unit
 from app.models import AuditTask, AuditUnit, Finding, Material, User, get_db
 from app.parsers.dispatcher import UnsupportedFormatError
 from app.services import audit_service
+from app.services.report_service import build_report_docx
 from app.tasks import run_audit_task
 
 units_router = APIRouter(prefix="/api/units", tags=["audit:units"])
@@ -148,6 +150,35 @@ def finalize_task(task_id: int,
                   db: Session = Depends(get_db),
                   user: User = Depends(require_auditor)):
     return audit_service.finalize_task(db, task_id, user)
+
+
+@tasks_router.get("/{task_id}/report")
+def download_task_report(task_id: int,
+                         db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """生成 Word 核查报告（v3 §3.6 5 章节）。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权下载此任务报告")
+    try:
+        data = build_report_docx(db, task)
+    except Exception as exc:
+        raise HTTPException(500, f"报告生成失败：{exc}")
+    safe_name = f"内控评价核查报告_{task.eval_year}_{task.id}.docx"
+    # RFC 5987 编码中文文件名
+    from urllib.parse import quote
+    filename_quoted = quote(safe_name)
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=report_{task.id}.docx; "
+                f"filename*=UTF-8''{filename_quoted}"
+        },
+    )
 
 
 # ============================================================
