@@ -48,6 +48,14 @@ if _FRONTEND_DIR.exists():
         if index_html.exists():
             return FileResponse(index_html)
         return {"name": settings.app_name, "docs": "/docs"}
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        """老式浏览器仍然会自动请求 /favicon.ico，回 SVG 以消除 404。"""
+        svg = _FRONTEND_DIR / "favicon.svg"
+        if svg.exists():
+            return FileResponse(svg, media_type="image/svg+xml")
+        return FileResponse(svg, status_code=404)
 else:
     @app.get("/")
     def root() -> dict:
