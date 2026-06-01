@@ -26,9 +26,22 @@ from app.crosscheck import FinanceChain, ProcurementChain, ReportChain
 from app.models import ChainCheckTask, CheckTask, Document, User, get_db
 from app.parsers import SUPPORTED_EXTENSIONS
 from app.rules import list_templates
-from app.services.chain_service import run_finance, run_procurement, run_report
-from app.services.check_service import run_check
+from app.services.chain_service import (
+    create_finance_pending,
+    create_procurement_pending,
+    create_report_pending,
+    run_finance,
+    run_procurement,
+    run_report,
+)
+from app.services.check_service import create_pending_check, run_check
 from app.services.report import build_report_docx
+from app.tasks import (
+    run_check_task,
+    run_finance_chain_task,
+    run_procurement_chain_task,
+    run_report_chain_task,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -132,6 +145,27 @@ def create_check(
     return task
 
 
+@router.post("/checks/async", response_model=CheckTaskOut)
+def create_check_async(
+    req: CheckRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CheckTask:
+    """异步创建检查任务：立即返回 pending 任务，worker 后台执行。"""
+    doc = _ensure_doc_accessible(db, req.document_id, user)
+    try:
+        task = create_pending_check(db, doc, req.template_key)
+    except KeyError as exc:
+        raise HTTPException(400, str(exc))
+    log_action(db, user, "check.enqueue", target_type="check_task", target_id=task.id,
+               detail=f"入队对文档 #{doc.id} 套用「{req.template_key}」模板")
+    db.commit()
+    # 入队（eager 模式同步执行；生产由 worker 消费）
+    run_check_task.delay(task.id)
+    db.refresh(task)
+    return task
+
+
 @router.get("/checks/{task_id}", response_model=CheckTaskOut)
 def get_check(
     task_id: int,
@@ -232,6 +266,77 @@ def create_report_chain(
     ))
     log_action(db, user, "chain.report", target_type="chain_task", target_id=task.id)
     db.commit()
+    return task
+
+
+# ─── 异步联动校验 ──────────────────────────────────────
+@router.post("/chain-checks/async", response_model=ChainCheckTaskOut)
+def create_procurement_chain_async(
+    req: ChainCheckRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChainCheckTask:
+    if not any([req.tender_doc_id, req.bid_doc_id, req.eval_doc_id, req.contract_doc_id]):
+        raise HTTPException(400, "至少提供一份招采文档")
+    _validate_chain_docs(db, user, [req.tender_doc_id, req.bid_doc_id,
+                                    req.eval_doc_id, req.contract_doc_id])
+    task = create_procurement_pending(db, ProcurementChain(
+        tender_doc_id=req.tender_doc_id,
+        bid_doc_id=req.bid_doc_id,
+        eval_doc_id=req.eval_doc_id,
+        contract_doc_id=req.contract_doc_id,
+    ))
+    log_action(db, user, "chain.procurement.enqueue",
+               target_type="chain_task", target_id=task.id)
+    db.commit()
+    run_procurement_chain_task.delay(task.id)
+    db.refresh(task)
+    return task
+
+
+@router.post("/chain-checks/finance/async", response_model=ChainCheckTaskOut)
+def create_finance_chain_async(
+    req: FinanceChainRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChainCheckTask:
+    if not any([req.finance_doc_id, req.final_account_doc_id, req.asset_doc_id, req.contract_doc_ids]):
+        raise HTTPException(400, "至少提供一份财务链文档")
+    _validate_chain_docs(db, user, [req.finance_doc_id, req.final_account_doc_id,
+                                    req.asset_doc_id, *req.contract_doc_ids])
+    task = create_finance_pending(db, FinanceChain(
+        finance_doc_id=req.finance_doc_id,
+        final_account_doc_id=req.final_account_doc_id,
+        asset_doc_id=req.asset_doc_id,
+        contract_doc_ids=list(req.contract_doc_ids),
+    ))
+    log_action(db, user, "chain.finance.enqueue",
+               target_type="chain_task", target_id=task.id)
+    db.commit()
+    run_finance_chain_task.delay(task.id)
+    db.refresh(task)
+    return task
+
+
+@router.post("/chain-checks/report/async", response_model=ChainCheckTaskOut)
+def create_report_chain_async(
+    req: ReportChainRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChainCheckTask:
+    if not any([req.ic_doc_id, req.perf_doc_id, req.project_doc_id]):
+        raise HTTPException(400, "至少提供一份报告链文档")
+    _validate_chain_docs(db, user, [req.ic_doc_id, req.perf_doc_id, req.project_doc_id])
+    task = create_report_pending(db, ReportChain(
+        ic_doc_id=req.ic_doc_id,
+        perf_doc_id=req.perf_doc_id,
+        project_doc_id=req.project_doc_id,
+    ))
+    log_action(db, user, "chain.report.enqueue",
+               target_type="chain_task", target_id=task.id)
+    db.commit()
+    run_report_chain_task.delay(task.id)
+    db.refresh(task)
     return task
 
 

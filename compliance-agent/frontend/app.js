@@ -162,16 +162,27 @@ async function loadDocsForCheck() {
     .map(t => `<option value="${t.key}">${esc(t.name)} (${esc(t.applies_to)})</option>`).join("");
 }
 
+// 通用轮询：直到 task.status ∈ {done, failed} 或超时
+async function pollTask(getPath, statusEl, max = 60) {
+  for (let i = 0; i < max; i++) {
+    const task = await api(getPath);
+    if (task.status === "done" || task.status === "failed") return task;
+    statusEl.textContent = `任务排队中（${task.status === "pending" ? "等待 worker" : "执行中"}）…`;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  throw new Error("任务执行超时（60s 未完成）");
+}
+
 document.getElementById("check-form").addEventListener("submit", async ev => {
   ev.preventDefault();
   const fd = new FormData(ev.target);
   const status = document.getElementById("check-status");
   const resultBox = document.getElementById("check-result");
-  status.textContent = "检查中（包含 RAG+LLM 调用，可能耗时）…";
+  status.textContent = "提交任务到队列…";
   status.className = "text-sm text-indigo-600 mt-3";
   resultBox.classList.add("hidden");
   try {
-    const task = await api("/checks", {
+    const initial = await api("/checks/async", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -179,6 +190,9 @@ document.getElementById("check-form").addEventListener("submit", async ev => {
         template_key: fd.get("template_key"),
       }),
     });
+    // 轮询直到完成
+    const task = await pollTask(`/checks/${initial.id}`, status);
+    if (task.status === "failed") throw new Error(task.summary || "任务失败");
     State.checkCount += 1;
     State.issueCount += task.issues.length;
     document.getElementById("stat-checks").textContent = State.checkCount;
@@ -419,7 +433,7 @@ const CHAIN_CONFIGS = {
   procurement: {
     title: "招采链联动校验",
     desc: "招标 → 投标 → 评标 → 合同 跨文件字段比对",
-    endpoint: "/chain-checks",
+    endpoint: "/chain-checks/async",
     fields: [
       { key: "tender_doc_id", label: "招标文件" },
       { key: "bid_doc_id", label: "投标文件" },
@@ -430,7 +444,7 @@ const CHAIN_CONFIGS = {
   finance: {
     title: "财务链联动校验",
     desc: "财务报告 → 决算报告 → 资产报告 → 合同 数据交叉互验",
-    endpoint: "/chain-checks/finance",
+    endpoint: "/chain-checks/finance/async",
     fields: [
       { key: "finance_doc_id", label: "财务报告" },
       { key: "final_account_doc_id", label: "决算报告" },
@@ -441,7 +455,7 @@ const CHAIN_CONFIGS = {
   report: {
     title: "报告链联动校验",
     desc: "内控报告 → 绩效报告 → 项目资料 内容交叉印证",
-    endpoint: "/chain-checks/report",
+    endpoint: "/chain-checks/report/async",
     fields: [
       { key: "ic_doc_id", label: "内控报告" },
       { key: "perf_doc_id", label: "绩效评价报告" },
@@ -508,11 +522,13 @@ document.getElementById("chain-submit").addEventListener("click", async () => {
   status.className = "text-sm text-indigo-600";
 
   try {
-    const task = await api(cfg.endpoint, {
+    const initial = await api(cfg.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    const task = await pollTask(`/chain-checks/${initial.id}`, status);
+    if (task.status === "failed") throw new Error(task.summary || "联动校验失败");
     State.chainCount += 1;
     State.issueCount += task.issues.length;
     document.getElementById("stat-chains").textContent = State.chainCount;

@@ -66,14 +66,22 @@ services:
       - backend
     restart: unless-stopped
 
-  # ===== 后续阶段 =====
-  # worker:                # Phase 3：Celery 异步任务（联动校验等耗时任务）
-  #   build: ./backend
-  #   command: celery -A app.tasks.celery_app worker -l info
-  #   env_file: .env
-  #   depends_on: [redis, postgres]
-  #
-  # frontend:              # Phase 2+：Next.js 前端
+  worker:
+    build: ./backend
+    command: celery -A app.tasks.celery_app worker -l info --concurrency=4
+    env_file: .env
+    environment:
+      CELERY_EAGER: "false"   # 生产由 worker 进程异步消费
+    volumes:
+      - ./backend/data:/app/data
+      - storage_data:/app/storage
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+    restart: unless-stopped
+
+  # frontend:              # Phase 2+：Next.js 前端（当前用后端内嵌静态页）
   #   build: ./frontend
   #   ports: ["3000:3000"]
 

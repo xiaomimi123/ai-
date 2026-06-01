@@ -25,9 +25,9 @@ anthropic==0.28.0
 # 报告导出
 # python-docx 复用上面
 
-# 异步任务（后续阶段）
-# celery==5.4.0
-# redis==5.0.4
+# 异步任务（生产；离线开发可不安装，配置项会自动走 eager 模式）
+celery==5.4.0
+redis==5.0.4
 
 # 测试
 pytest==8.2.0

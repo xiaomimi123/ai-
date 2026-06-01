@@ -1,8 +1,14 @@
-"""检查编排服务：解析 → 规则引擎 → 写入问题台账（Phase 1 同步执行）。"""
+"""检查编排服务。
+
+两阶段设计（Phase 4 异步化）：
+- create_pending_check：DB 写入 status=pending 的任务，返回任务对象
+- execute_pending_check：Worker 调用，实际执行解析+规则引擎，写台账
+- run_check：保留同步入口，先创建 pending 再立刻执行，向后兼容
+"""
 from __future__ import annotations
 
 from collections import Counter
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -13,21 +19,44 @@ from app.rules import RuleEngine, get_template
 from app.rules.soft_context import LLMRagContext
 
 
-def run_check(db: Session, document: Document, template_key: str) -> CheckTask:
-    template = get_template(template_key)
+def create_pending_check(db: Session, document: Document, template_key: str) -> CheckTask:
+    """同步：创建一个 pending 状态的检查任务并提交。"""
+    # 校验模板存在（早 fail）
+    get_template(template_key)
 
-    task = CheckTask(document_id=document.id, template_key=template_key, status="running")
+    task = CheckTask(
+        document_id=document.id,
+        template_key=template_key,
+        status="pending",
+        summary="排队中…",
+    )
     db.add(task)
-    db.flush()
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def execute_pending_check(db: Session, task: CheckTask, document: Optional[Document]) -> CheckTask:
+    """Worker 调用：执行已 pending 的任务。"""
+    if task is None:
+        return task
+    if document is None:
+        task.status = "failed"
+        task.summary = "检查失败：文档不存在"
+        db.commit()
+        return task
+
+    template = get_template(task.template_key)
+    task.status = "running"
+    task.summary = "执行中…"
+    db.commit()
 
     try:
         parsed = parse(document.storage_path)
         parsed.metadata.setdefault("file_name", document.file_name)
-        # 子类供招采等模板按子类（招标/投标/评标）分流规则
         if document.subcategory:
             parsed.metadata.setdefault("subcategory", document.subcategory)
 
-        # 柔性规则上下文：离线自动降级，不会因 LLM/向量库缺失而报错
         soft_ctx = LLMRagContext()
         engine = RuleEngine(soft_ctx=soft_ctx)
         issues: List[Issue] = engine.run(template, parsed)
@@ -55,6 +84,15 @@ def run_check(db: Session, document: Document, template_key: str) -> CheckTask:
     db.commit()
     db.refresh(task)
     return task
+
+
+def run_check(db: Session, document: Document, template_key: str) -> CheckTask:
+    """同步路径：创建 pending → 立即执行。
+
+    保留以向后兼容（部分测试 / 旧调用方仍用这条路径）。
+    """
+    task = create_pending_check(db, document, template_key)
+    return execute_pending_check(db, task, document)
 
 
 def _summarize(issues: List[Issue]) -> str:

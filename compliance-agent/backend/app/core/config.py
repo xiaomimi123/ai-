@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     llm_model: str = "claude-opus-4-8"
 
+    # Celery / Redis
+    redis_url: str = "redis://localhost:6379/0"
+    # eager 模式：任务在调用线程内同步执行（默认开，离线测试零依赖）
+    # 生产部署关闭后由 Celery worker 进程异步消费
+    celery_eager: bool = True
+
     @property
     def use_real_llm(self) -> bool:
         return self.llm_provider == "claude" and bool(self.anthropic_api_key)
