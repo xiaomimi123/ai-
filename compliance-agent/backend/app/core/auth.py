@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.permissions import is_admin
+from app.core.permissions import is_admin, is_auditor_or_above
 from app.models import AuditLog, AuthToken, User, get_db
 
 
@@ -49,7 +49,14 @@ def get_current_user(
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if not is_admin(user.role):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "需要管理员权限")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "需要超级管理员权限")
+    return user
+
+
+def require_auditor(user: User = Depends(get_current_user)) -> User:
+    """审查员及以上（含超级管理员）。"""
+    if not is_auditor_or_above(user.role):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "需要审查员权限")
     return user
 
 

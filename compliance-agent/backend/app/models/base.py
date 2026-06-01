@@ -41,7 +41,7 @@ def _seed_admin() -> None:
         db.add(User(
             username="admin",
             password_hash=hash_password("admin123"),
-            role="admin",
+            role="super_admin",
             full_name="系统管理员",
             is_active=True,
         ))

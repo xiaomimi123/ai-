@@ -1,72 +1,49 @@
-# 行政事业单位文档合规检查智能体
+# 内控评价智能审核系统
 
-自研（不依赖 Dify）的文档合规协同检查系统。详见 `../行政事业单位文档合规检查智能体-自研技术开发文档.md`。
+> 站在上级复核方视角，AI 拿着问题清单和法规，对被检查单位的内控评价报告与佐证材料逐项核查，出具核查报告。
 
-## 当前进度
+详见 `../内控评价合规审查智能体-完整开发文档v3.md`。
 
-- ✅ **Phase 1**：单文件检查闭环（合同）
-- ✅ **Phase 2**：7 套检查模板（合同/制度/招采三合一/内控/财务+决算/资产/绩效，共 59 刚性 + 7 柔性规则）
-- ✅ **Phase 3**：3 条联动校验链（招采链/财务链/报告链，共 21 条跨文件规则）
-- ✅ **Phase 4 前端**：单页 HTML + Vanilla JS + Tailwind CDN，4 个面板（仪表板/文档管理/单文件检查/联动校验）
-- ⬜ **Phase 4 余下**：Celery 异步、权限分级、协同复核、批量处理
+## 核心能力
 
-设计文档：`../docs/superpowers/specs/2026-05-31-phase1-single-file-check-design.md`
+- **法规知识库**：上位法 / 评价办法 / 编报指南附件 1/2 / 高频问题
+- **问题清单库**：客户提供的真实性+相关性核查清单，AI 的「考题」
+- **AI 核查引擎**：刚性规则（公章/日期/年度）+ LLM 语义核查
+- **5 大检查维度**：总体合规性 / 相关性 / 评分合规 / 复核规范 / 报告编报
+- **协同复核流程**：AI 初核 → 审查员标注 → 报告下发 → 整改销号
+- **4 角色权限**：超级管理员 / 审查员 / 被检查单位 / 只读用户
 
-## 关键设计：离线可运行 + 生产可切换
+## 技术栈
 
-所有外部重依赖均「接口 + 可降级实现」，默认零外部依赖即可运行测试，通过 `.env` 切换生产实现：
+| 层 | 组件 |
+|---|---|
+| 前端 | 单页 HTML + Vanilla JS + Tailwind CDN |
+| 后端 | Python FastAPI + SQLAlchemy + Celery |
+| LLM | **DeepSeek V4 Pro**（默认，1M 上下文，OpenAI 兼容）/ Claude（备选）/ stub（离线兜底）|
+| RAG | Qdrant + bge-large-zh（生产）/ 内存余弦（离线）|
+| 数据 | PostgreSQL + MinIO + Redis |
 
-| 能力 | 离线默认 | 生产（.env 开启） |
-|------|---------|------------------|
-| 数据库 | SQLite | PostgreSQL（`DATABASE_URL`）|
-| Embedding | 确定性 hash 向量 | bge-large-zh（`EMBEDDER=bge`）|
-| 向量库 | 内存余弦 | Qdrant（`VECTOR_STORE=qdrant`）|
-| LLM | 保守 stub | Claude（`LLM_PROVIDER=claude` + key）|
-
-刚性规则不依赖任何外部服务，是确定性可测核心。
-
-## 本地开发（不用 Docker，最快）
+## 本地快速运行
 
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt           # 或仅装测试所需子集
-pytest                                     # 跑全部单元 + 端到端测试
-uvicorn app.main:app --reload             # 启动 API+前端，访问 http://localhost:8000/
+pip install -r requirements.txt
+pytest
+uvicorn app.main:app --reload    # http://localhost:8000/
 ```
 
-默认走 SQLite + 内存向量库 + stub LLM，无需任何外部服务。
-
-- 前端 UI：`http://localhost:8000/`
-- API 文档：`http://localhost:8000/docs`
-
-## Docker（全栈，对齐生产）
+## Docker 全栈部署
 
 ```bash
-cp .env.example .env          # 填数据库密码、LLM key 等
+cp .env.example .env             # 编辑端口/密码
 docker compose up -d --build
 docker compose exec backend python -m app.init_db
-docker compose exec backend python -m app.rag.ingest --dir ./data/regulations
-# 前端: http://localhost   API 文档: http://localhost:8000/docs
+# 默认登录 admin / admin123（首次部署后请尽快修改）
 ```
 
-## API（Phase 1）
+## LLM API Key 配置
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/health` | 健康检查 + 当前后端实现 |
-| GET | `/api/templates` | 列出检查模板（7 套，Phase 1 仅合同就绪）|
-| POST | `/api/documents` | 上传文档（multipart，带分类 metadata）|
-| POST | `/api/checks` | 对文档执行模板检查 → 生成问题台账 |
-| GET | `/api/checks/{id}` | 查看检查任务与台账 |
-| GET | `/api/checks/{id}/report` | 导出 docx 检查报告 |
-
-## 合同刚性规则（确定性，不调 LLM）
-
-合同编号、签订日期、甲乙方主体、金额大小写一致性、必备条款（付款/违约/期限）、签章留痕。
-
-## 后续阶段
-
-- Phase 2：扩展 9 大分类 + 7 套模板
-- Phase 3：跨文件联动校验引擎（招采链 / 财务链 / 报告链）+ Celery 异步
-- Phase 4：前端 UI、协同复核、权限细分、批量处理
+两种方式（任一即可）：
+1. **环境变量**：`.env` 设置 `LLM_API_KEY=sk-...`
+2. **后台界面**：登录后进「系统设置」页填入 DeepSeek API Key（覆盖环境变量）

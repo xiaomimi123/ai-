@@ -1,58 +1,66 @@
-"""角色与权限（§3.7）。
+"""v3 角色与权限（v3 §3.7）。
 
-四角色：管理员、招采专员、财务专员、内控专员。
-权限按 §3.1 一级分类细分。
+四角色：
+- super_admin   超级管理员：全部权限（管理知识库、用户、任务）
+- auditor       审查员：创建任务、查看结果、复核标注、生成报告
+- unit          被检查单位：上传材料、查看本单位核查结果、填写整改说明
+- readonly      只读用户：查看报告，不可操作
 """
 from __future__ import annotations
 
-from typing import FrozenSet, Set
+ROLE_SUPER_ADMIN = "super_admin"
+ROLE_AUDITOR = "auditor"
+ROLE_UNIT = "unit"
+ROLE_READONLY = "readonly"
 
-ROLE_ADMIN = "admin"
-ROLE_PROCUREMENT = "procurement"
-ROLE_FINANCE = "finance"
-ROLE_INTERNAL_CONTROL = "internal_control"
+# 向后兼容：旧种子 admin 角色直接映射到 super_admin
+_LEGACY_ROLE_MAP = {"admin": ROLE_SUPER_ADMIN}
 
-ALL_ROLES = frozenset([ROLE_ADMIN, ROLE_PROCUREMENT, ROLE_FINANCE, ROLE_INTERNAL_CONTROL])
+ALL_ROLES = frozenset([ROLE_SUPER_ADMIN, ROLE_AUDITOR, ROLE_UNIT, ROLE_READONLY])
 
-# 角色 → 可访问的一级分类
-_ROLE_CATEGORIES: dict[str, FrozenSet[str]] = {
-    ROLE_ADMIN: frozenset({
-        "内部制度", "合同", "采购招标", "内控报告",
-        "决算报告", "财务报告", "国有资产报告",
-        "绩效评价报告", "其他佐证资料",
-    }),
-    ROLE_PROCUREMENT: frozenset({"合同", "采购招标", "其他佐证资料"}),
-    ROLE_FINANCE: frozenset({
-        "财务报告", "决算报告", "国有资产报告",
-        "合同",  # 合同付款涉及财务对账，需可见
-        "其他佐证资料",
-    }),
-    ROLE_INTERNAL_CONTROL: frozenset({
-        "内部制度", "内控报告", "绩效评价报告",
-        "其他佐证资料",
-    }),
-}
+
+def normalize_role(role: str) -> str:
+    return _LEGACY_ROLE_MAP.get(role, role)
 
 
 def role_label(role: str) -> str:
     return {
-        ROLE_ADMIN: "管理员",
-        ROLE_PROCUREMENT: "招采专员",
-        ROLE_FINANCE: "财务专员",
-        ROLE_INTERNAL_CONTROL: "内控专员",
-    }.get(role, role)
-
-
-def allowed_categories(role: str) -> Set[str]:
-    return set(_ROLE_CATEGORIES.get(role, frozenset()))
-
-
-def can_access_category(role: str, category: str) -> bool:
-    """空分类视为通用资料，对所有角色可见（保留向后兼容）。"""
-    if not category:
-        return True
-    return category in _ROLE_CATEGORIES.get(role, frozenset())
+        ROLE_SUPER_ADMIN: "超级管理员",
+        ROLE_AUDITOR: "审查员",
+        ROLE_UNIT: "被检查单位",
+        ROLE_READONLY: "只读用户",
+    }.get(normalize_role(role), role)
 
 
 def is_admin(role: str) -> bool:
-    return role == ROLE_ADMIN
+    return normalize_role(role) == ROLE_SUPER_ADMIN
+
+
+def is_auditor_or_above(role: str) -> bool:
+    r = normalize_role(role)
+    return r in (ROLE_SUPER_ADMIN, ROLE_AUDITOR)
+
+
+def is_unit(role: str) -> bool:
+    return normalize_role(role) == ROLE_UNIT
+
+
+def can_manage_knowledge(role: str) -> bool:
+    """管理知识库（指标库、问题清单库）：仅超级管理员。"""
+    return is_admin(role)
+
+
+def can_create_task(role: str) -> bool:
+    """创建核查任务：审查员及以上。"""
+    return is_auditor_or_above(role)
+
+
+def can_review_findings(role: str) -> bool:
+    """复核标注 finding：审查员及以上。"""
+    return is_auditor_or_above(role)
+
+
+def can_rectify_findings(role: str) -> bool:
+    """填写整改说明：被检查单位 + 审查员（代填）。"""
+    r = normalize_role(role)
+    return r in (ROLE_SUPER_ADMIN, ROLE_AUDITOR, ROLE_UNIT)
