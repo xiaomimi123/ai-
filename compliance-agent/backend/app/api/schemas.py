@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List, Optional
+from pydantic import Field
 
 from pydantic import BaseModel
 
@@ -52,6 +53,7 @@ class CheckTaskOut(BaseModel):
 
 
 class ChainCheckRequest(BaseModel):
+    """招采链请求（保留向后兼容）。"""
     chain_type: str = "procurement"
     tender_doc_id: Optional[int] = None
     bid_doc_id: Optional[int] = None
@@ -59,13 +61,33 @@ class ChainCheckRequest(BaseModel):
     contract_doc_id: Optional[int] = None
 
 
+class FinanceChainRequest(BaseModel):
+    finance_doc_id: Optional[int] = None
+    final_account_doc_id: Optional[int] = None
+    asset_doc_id: Optional[int] = None
+    contract_doc_ids: List[int] = Field(default_factory=list)
+
+
+class ReportChainRequest(BaseModel):
+    ic_doc_id: Optional[int] = None
+    perf_doc_id: Optional[int] = None
+    project_doc_id: Optional[int] = None
+
+
 class ChainCheckTaskOut(BaseModel):
     id: int
     chain_type: str
-    tender_doc_id: Optional[int]
-    bid_doc_id: Optional[int]
-    eval_doc_id: Optional[int]
-    contract_doc_id: Optional[int]
+    tender_doc_id: Optional[int] = None
+    bid_doc_id: Optional[int] = None
+    eval_doc_id: Optional[int] = None
+    contract_doc_id: Optional[int] = None
+    finance_doc_id: Optional[int] = None
+    final_account_doc_id: Optional[int] = None
+    asset_doc_id: Optional[int] = None
+    contract_doc_ids: str = ""
+    ic_doc_id: Optional[int] = None
+    perf_doc_id: Optional[int] = None
+    project_doc_id: Optional[int] = None
     status: str
     summary: str
     extracted_fields: str = ""

@@ -50,10 +50,21 @@ class ChainCheckTask(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     chain_type: Mapped[str] = mapped_column(String(32), default="procurement")  # procurement|finance|report
+    # 招采链 4 个文档
     tender_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     bid_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     eval_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     contract_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # 财务链 3 个文档 + 多份合同（JSON 数组）
+    finance_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    final_account_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    asset_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    contract_doc_ids: Mapped[str] = mapped_column(Text, default="")  # JSON 字符串
+    # 报告链 3 个文档
+    ic_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    perf_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    project_doc_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     status: Mapped[str] = mapped_column(String(32), default="done")
     summary: Mapped[str] = mapped_column(Text, default="")
     extracted_fields: Mapped[str] = mapped_column(Text, default="")  # JSON 序列化

@@ -8,6 +8,10 @@ from tests.samples import (
     BAD_INTERNAL_CONTROL, BAD_FINANCE_FINAL, BAD_ASSET, BAD_PERFORMANCE,
     CHAIN_BAD_BID, CHAIN_BAD_CONTRACT, CHAIN_BAD_EVAL,
     CHAIN_GOOD_BID, CHAIN_GOOD_CONTRACT, CHAIN_GOOD_EVAL, CHAIN_GOOD_TENDER,
+    FIN_BAD_FINAL_ACCOUNT, FIN_BAD_FINANCE,
+    FIN_GOOD_ASSET, FIN_GOOD_FINAL_ACCOUNT, FIN_GOOD_FINANCE,
+    REP_BAD_IC, REP_BAD_PERF, REP_BAD_PROJECT,
+    REP_GOOD_IC, REP_GOOD_PERF, REP_GOOD_PROJECT,
     GOOD_BID, GOOD_CONTRACT, GOOD_EVAL, GOOD_INSTITUTION, GOOD_TENDER,
     GOOD_INTERNAL_CONTROL, GOOD_FINANCE_FINAL, GOOD_ASSET, GOOD_PERFORMANCE,
 )
@@ -184,6 +188,79 @@ def test_procurement_chain_consistent_no_inconsistency(client):
 
 def test_chain_check_rejects_empty_input(client):
     r = client.post("/api/chain-checks", json={})
+    assert r.status_code == 400
+
+
+def test_finance_chain_end_to_end(client):
+    """财务链端到端：上传 3 份报告 → 跨文件数据比对。"""
+    fin_id = _upload(client, FIN_BAD_FINANCE, "fin_bad.txt", category="财务报告")
+    fa_id = _upload(client, FIN_BAD_FINAL_ACCOUNT, "fa_bad.txt", category="决算报告")
+
+    r = client.post("/api/chain-checks/finance", json={
+        "finance_doc_id": fin_id, "final_account_doc_id": fa_id,
+    })
+    assert r.status_code == 200, r.text
+    task = r.json()
+    assert task["chain_type"] == "finance"
+    assert task["status"] == "done"
+    rule_ids = {i["rule_id"] for i in task["issues"]}
+    # 恒等式 + 收入不一致 + 预决算差异都应被检出
+    assert "fin.balance_sheet_identity" in rule_ids
+    assert "fin.income_vs_final" in rule_ids
+    assert "fin.budget_vs_actual" in rule_ids
+
+
+def test_finance_chain_good_no_inconsistency(client):
+    fin_id = _upload(client, FIN_GOOD_FINANCE, "fin.txt", category="财务报告")
+    fa_id = _upload(client, FIN_GOOD_FINAL_ACCOUNT, "fa.txt", category="决算报告")
+    a_id = _upload(client, FIN_GOOD_ASSET, "asset.txt", category="国有资产报告")
+
+    r = client.post("/api/chain-checks/finance", json={
+        "finance_doc_id": fin_id, "final_account_doc_id": fa_id, "asset_doc_id": a_id,
+    })
+    task = r.json()
+    real = [i for i in task["issues"] if i["rule_id"] != "fin.completeness"]
+    assert real == [], [i["description"] for i in real]
+
+
+def test_report_chain_end_to_end(client):
+    """报告链端到端：上传 3 份报告 → 跨文件印证比对。"""
+    ic_id = _upload(client, REP_BAD_IC, "ic_bad.txt", category="内控报告")
+    perf_id = _upload(client, REP_BAD_PERF, "perf_bad.txt", category="绩效评价报告")
+    proj_id = _upload(client, REP_BAD_PROJECT, "proj_bad.txt", category="其他佐证资料")
+
+    r = client.post("/api/chain-checks/report", json={
+        "ic_doc_id": ic_id, "perf_doc_id": perf_id, "project_doc_id": proj_id,
+    })
+    assert r.status_code == 200, r.text
+    task = r.json()
+    assert task["chain_type"] == "report"
+    rule_ids = {i["rule_id"] for i in task["issues"]}
+    assert "report.score_vs_grade" in rule_ids
+    assert "report.ic_eval_vs_deficiency" in rule_ids
+    assert "report.material_no_completion" in rule_ids
+
+
+def test_report_chain_good_no_inconsistency(client):
+    ic_id = _upload(client, REP_GOOD_IC, "ic.txt", category="内控报告")
+    perf_id = _upload(client, REP_GOOD_PERF, "perf.txt", category="绩效评价报告")
+    proj_id = _upload(client, REP_GOOD_PROJECT, "proj.txt", category="其他佐证资料")
+
+    r = client.post("/api/chain-checks/report", json={
+        "ic_doc_id": ic_id, "perf_doc_id": perf_id, "project_doc_id": proj_id,
+    })
+    task = r.json()
+    real = [i for i in task["issues"] if i["rule_id"] != "report.completeness"]
+    assert real == [], [i["description"] for i in real]
+
+
+def test_finance_chain_rejects_empty(client):
+    r = client.post("/api/chain-checks/finance", json={})
+    assert r.status_code == 400
+
+
+def test_report_chain_rejects_empty(client):
+    r = client.post("/api/chain-checks/report", json={})
     assert r.status_code == 400
 
 

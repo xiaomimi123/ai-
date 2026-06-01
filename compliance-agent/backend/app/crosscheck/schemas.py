@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -62,3 +62,94 @@ class ChainFields:
     bid_file: str = ""
     eval_file: str = ""
     contract_file: str = ""
+
+
+# ===================== 财务链 =====================
+@dataclass
+class FinanceFields:
+    """财务报告抽取字段。"""
+    year: Optional[int] = None              # 报告年度
+    total_assets: Optional[float] = None    # 资产合计
+    total_liabilities: Optional[float] = None  # 负债合计
+    total_net_assets: Optional[float] = None   # 净资产合计
+    total_income: Optional[float] = None    # 收入合计
+    total_expense: Optional[float] = None   # 支出合计
+
+
+@dataclass
+class FinalAccountFields:
+    """决算报告抽取字段。"""
+    year: Optional[int] = None
+    total_income: Optional[float] = None    # 决算收入
+    total_expense: Optional[float] = None   # 决算支出
+    budget_total: Optional[float] = None    # 预算总额（用于预决算差异判断）
+    three_public_total: Optional[float] = None  # 三公经费合计
+
+
+@dataclass
+class AssetReportFields:
+    """国有资产报告抽取字段。"""
+    year: Optional[int] = None
+    total_assets: Optional[float] = None    # 资产总额
+    fixed_assets: Optional[float] = None    # 固定资产
+
+
+@dataclass
+class ContractPaymentFields:
+    """合同付款相关：从合同正文抽（金额已在 ContractFields 中）。
+
+    这里仅记录与财务链相关的辅助信息。
+    """
+    amount: Optional[float] = None
+    file_name: str = ""
+
+
+@dataclass
+class FinanceChainFields:
+    """财务链全部抽取结果。"""
+    finance: Optional[FinanceFields] = None
+    final_account: Optional[FinalAccountFields] = None
+    asset: Optional[AssetReportFields] = None
+    contract_amounts: List["ContractPaymentFields"] = field(default_factory=list)
+    finance_file: str = ""
+    final_account_file: str = ""
+    asset_file: str = ""
+
+
+# ===================== 报告链 =====================
+@dataclass
+class InternalControlReportFields:
+    """内控报告抽取字段。"""
+    year: Optional[int] = None
+    project_mentions: List[str] = field(default_factory=list)  # 报告中提及的项目名称
+    deficiency_count: Optional[int] = None                     # 披露的缺陷数量
+    evaluation_result: str = ""                                # 自我评价结论
+
+
+@dataclass
+class PerformanceReportFields:
+    """绩效评价报告抽取字段。"""
+    year: Optional[int] = None
+    project_name: str = ""
+    score: Optional[float] = None        # 综合得分
+    grade: str = ""                      # 评价等次：优/良/中/差
+    has_problems: bool = False           # 是否列示问题
+
+
+@dataclass
+class ProjectMaterialFields:
+    """项目资料（佐证材料）抽取字段。"""
+    project_name: str = ""
+    has_approval: bool = False           # 是否有立项/审批留痕
+    has_completion: bool = False         # 是否有验收/完工留痕
+
+
+@dataclass
+class ReportChainFields:
+    """报告链全部抽取结果。"""
+    internal_control: Optional[InternalControlReportFields] = None
+    performance: Optional[PerformanceReportFields] = None
+    project_material: Optional[ProjectMaterialFields] = None
+    ic_file: str = ""
+    perf_file: str = ""
+    project_file: str = ""
