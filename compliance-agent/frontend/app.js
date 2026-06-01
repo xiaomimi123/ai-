@@ -1,9 +1,20 @@
-// 前端应用：与 /api 通信、管理 5 个面板的状态与渲染。
+// v3 内控评价智能审核系统 前端逻辑
 
 const API = "/api";
-const TOKEN_KEY = "compliance.token";
+const TOKEN_KEY = "audit.token";
 
-// ─── 通用工具 ─────────────────────────────────────────
+const State = {
+  user: null,
+  roleLabel: "",
+  units: [],
+  indicators: [],
+  checkItems: [],
+  tasks: [],
+  activeTaskId: null,
+  activeFindingId: null,
+};
+
+// ─── 工具 ─────────────────────────────────────────────
 function getToken() { return localStorage.getItem(TOKEN_KEY) || ""; }
 function setToken(t) {
   if (t) localStorage.setItem(TOKEN_KEY, t);
@@ -17,7 +28,7 @@ async function api(path, opts = {}) {
   const r = await fetch(API + path, { ...opts, headers });
   if (r.status === 401) {
     setToken("");
-    Auth.user = null;
+    State.user = null;
     showLogin("登录已失效，请重新登录");
     throw new Error("未登录");
   }
@@ -36,12 +47,10 @@ function el(html) {
   t.innerHTML = html.trim();
   return t.content.firstChild;
 }
-
 function esc(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-
 function fmtTime(s) {
   if (!s) return "—";
   try { return new Date(s).toLocaleString("zh-CN"); } catch { return s; }
@@ -54,547 +63,106 @@ document.querySelectorAll(".nav-tab").forEach(btn => {
     btn.classList.add("tab-active");
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.add("hidden"));
     document.getElementById("tab-" + btn.dataset.tab).classList.remove("hidden");
-    if (btn.dataset.tab === "documents") loadDocs();
-    if (btn.dataset.tab === "checks") loadDocsForCheck();
-    if (btn.dataset.tab === "chains") loadDocsForChain();
-    if (btn.dataset.tab === "batches") loadBatches();
+    const tab = btn.dataset.tab;
+    if (tab === "dashboard") loadDashboard();
+    if (tab === "tasks") loadTasksTab();
+    if (tab === "knowledge") loadKnowledgeTab();
+    if (tab === "admin") loadAdmin();
+    if (tab === "settings") loadSettings();
+  });
+});
+
+// 知识库子 tab
+document.querySelectorAll(".kb-tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".kb-tab").forEach(b => b.classList.remove("kb-active"));
+    btn.classList.add("kb-active");
+    document.querySelectorAll(".kb-panel").forEach(p => p.classList.add("hidden"));
+    document.getElementById("kb-" + btn.dataset.kb).classList.remove("hidden");
+    loadKnowledgeTab();
   });
 });
 
 // ─── 仪表板 ───────────────────────────────────────────
 async function loadDashboard() {
   try {
-    const [health, templates, docs] = await Promise.all([
-      api("/health"), api("/templates"), api("/documents").catch(() => []),
-    ]);
-
-    // 系统状态
+    const health = await api("/health");
     document.getElementById("health-info").innerHTML = `
       <div class="flex justify-between"><span class="text-slate-500">服务</span><span class="text-emerald-600 font-medium">● 正常</span></div>
-      <div class="flex justify-between"><span class="text-slate-500">LLM</span><span>${esc(health.llm)}</span></div>
+      <div class="flex justify-between"><span class="text-slate-500">应用</span><span>${esc(health.app)}</span></div>
+      <div class="flex justify-between"><span class="text-slate-500">LLM</span><span>${esc(health.llm_default_provider)}</span></div>
       <div class="flex justify-between"><span class="text-slate-500">向量库</span><span>${esc(health.vector_store)}</span></div>
-      <div class="flex justify-between"><span class="text-slate-500">Embedding</span><span>${esc(health.embedder)}</span></div>
     `;
 
-    // 模板
-    const tg = document.getElementById("templates-grid");
-    tg.innerHTML = "";
-    templates.forEach(t => {
-      tg.appendChild(el(`
-        <div class="tmpl-card">
-          <div class="flex items-start justify-between">
-            <div class="font-medium">${esc(t.name)}</div>
-            <span class="badge ${t.ready ? "badge-低" : "badge-中"}" style="background:${t.ready ? '#dcfce7' : '#fef3c7'};color:${t.ready ? '#166534' : '#92400e'}">${t.ready ? "就绪" : "占位"}</span>
-          </div>
-          <div class="mt-1 text-xs text-slate-500">${esc(t.applies_to)} · 刚性 ${t.rigid_rules} / 柔性 ${t.soft_rules}</div>
-        </div>
-      `));
-    });
+    const [units, tasks, indicators, items] = await Promise.all([
+      api("/units").catch(() => []),
+      api("/tasks").catch(() => []),
+      api("/indicators").catch(() => []),
+      api("/check-items").catch(() => []),
+    ]);
+    State.units = units;
+    State.indicators = indicators;
+    State.checkItems = items;
+    State.tasks = tasks;
 
-    document.getElementById("stat-docs").textContent = docs.length;
-    document.getElementById("stat-checks").textContent = State.checkCount;
-    document.getElementById("stat-chains").textContent = State.chainCount;
-    document.getElementById("stat-issues").textContent = State.issueCount;
-  } catch (e) {
-    document.getElementById("health-info").innerHTML =
-      `<div class="text-rose-600 text-sm">无法连接后端：${esc(e.message)}</div>`;
-  }
-}
+    document.getElementById("stat-units").textContent = units.length;
+    document.getElementById("stat-tasks").textContent = tasks.length;
+    document.getElementById("stat-indicators").textContent = indicators.length;
+    document.getElementById("stat-check-items").textContent = items.length;
 
-const State = { checkCount: 0, chainCount: 0, issueCount: 0, docs: [], templates: [] };
-
-// 由于 /api/documents 没有 GET 列表端点，我们在前端维护已上传的文档列表
-async function loadDocs() {
-  const tbody = document.getElementById("docs-tbody");
-  if (State.docs.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-slate-400 py-6">暂无上传文档。请在上方上传文档。</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = "";
-  State.docs.forEach(d => {
-    tbody.appendChild(el(`
-      <tr>
-        <td class="font-mono text-xs">${d.id}</td>
-        <td>${esc(d.file_name)}</td>
-        <td><span class="cat-tag">${esc(d.category || "—")}</span></td>
-        <td>${esc(d.subcategory || "—")}</td>
-        <td>${esc(d.year || "—")}</td>
-        <td class="text-xs text-slate-500">${fmtTime(d.created_at)}</td>
-      </tr>
-    `));
-  });
-}
-
-document.getElementById("refresh-docs").addEventListener("click", loadDocs);
-
-document.getElementById("upload-form").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  const form = ev.target;
-  const fd = new FormData(form);
-  const status = document.getElementById("upload-status");
-  status.textContent = "上传中…";
-  try {
-    const doc = await api("/documents", { method: "POST", body: fd });
-    State.docs.unshift(doc);
-    status.textContent = `✓ 已上传：${doc.file_name} (id=${doc.id})`;
-    status.className = "text-sm text-emerald-600";
-    form.reset();
-    loadDocs();
-    document.getElementById("stat-docs").textContent = State.docs.length;
-  } catch (e) {
-    status.textContent = "✗ " + e.message;
-    status.className = "text-sm text-rose-600";
-  }
-});
-
-// ─── 单文件检查 ───────────────────────────────────────
-async function loadDocsForCheck() {
-  const sel = document.getElementById("check-doc");
-  sel.innerHTML = State.docs.length === 0
-    ? `<option value="">请先在「文档管理」上传文档</option>`
-    : State.docs.map(d => `<option value="${d.id}">[${d.id}] ${esc(d.file_name)} (${esc(d.category || "未分类")})</option>`).join("");
-
-  if (State.templates.length === 0) {
-    State.templates = await api("/templates");
-  }
-  const tsel = document.getElementById("check-template");
-  tsel.innerHTML = State.templates
-    .filter(t => t.ready)
-    .map(t => `<option value="${t.key}">${esc(t.name)} (${esc(t.applies_to)})</option>`).join("");
-}
-
-// 通用轮询：直到 task.status ∈ {done, failed} 或超时
-async function pollTask(getPath, statusEl, max = 60) {
-  for (let i = 0; i < max; i++) {
-    const task = await api(getPath);
-    if (task.status === "done" || task.status === "failed") return task;
-    statusEl.textContent = `任务排队中（${task.status === "pending" ? "等待 worker" : "执行中"}）…`;
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  throw new Error("任务执行超时（60s 未完成）");
-}
-
-document.getElementById("check-form").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  const fd = new FormData(ev.target);
-  const status = document.getElementById("check-status");
-  const resultBox = document.getElementById("check-result");
-  status.textContent = "提交任务到队列…";
-  status.className = "text-sm text-indigo-600 mt-3";
-  resultBox.classList.add("hidden");
-  try {
-    const initial = await api("/checks/async", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        document_id: parseInt(fd.get("document_id")),
-        template_key: fd.get("template_key"),
-      }),
-    });
-    // 轮询直到完成
-    const task = await pollTask(`/checks/${initial.id}`, status);
-    if (task.status === "failed") throw new Error(task.summary || "任务失败");
-    State.checkCount += 1;
-    State.issueCount += task.issues.length;
-    document.getElementById("stat-checks").textContent = State.checkCount;
-    document.getElementById("stat-issues").textContent = State.issueCount;
-    renderCheckResult(task);
-    status.textContent = `✓ 检查完成（任务 #${task.id}）`;
-    status.className = "text-sm text-emerald-600 mt-3";
-  } catch (e) {
-    status.textContent = "✗ " + e.message;
-    status.className = "text-sm text-rose-600 mt-3";
-  }
-});
-
-const STATUS_LABEL = {
-  open: "新建", assigned: "已下发", fixing: "整改中",
-  reviewing: "待复核", resolved: "已销号", rejected: "已打回",
-};
-
-function renderCheckResult(task) {
-  const box = document.getElementById("check-result");
-  box.classList.remove("hidden");
-  document.getElementById("check-result-title").textContent = `检查结果 · 任务 #${task.id}`;
-  document.getElementById("check-result-summary").textContent = task.summary;
-  document.getElementById("report-link").href = `${API}/checks/${task.id}/report`;
-
-  const tbody = document.getElementById("issues-tbody");
-  tbody.innerHTML = "";
-  if (!task.issues.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-emerald-600 py-6">✓ 未发现疑点。</td></tr>`;
-    return;
-  }
-  task.issues.forEach((i, idx) => {
-    const row = el(`
-      <tr>
-        <td class="font-mono text-xs">${idx + 1}</td>
-        <td>${esc(i.description)}<div class="text-xs text-slate-400 mt-1">规则：${esc(i.rule_id)} · ${i.source === "rigid" ? "刚性" : i.source === "soft" ? "柔性(LLM)" : i.source}</div></td>
-        <td class="text-xs text-slate-600">${esc(i.location || "—")}</td>
-        <td><span class="badge badge-${i.risk_level}">${esc(i.risk_level)}</span></td>
-        <td class="text-xs"><span class="cat-tag">${esc(STATUS_LABEL[i.handle_status] || i.handle_status)}</span></td>
-        <td class="text-xs">${esc(i.suggestion || "—")}</td>
-        <td><button class="btn-secondary text-xs" data-issue="${i.id}">协同复核</button></td>
-      </tr>
-    `);
-    row.querySelector("button").addEventListener("click", () => openIssueModal(i.id));
-    tbody.appendChild(row);
-  });
-}
-
-// ─── 协同复核模态 ─────────────────────────────────────
-let _modalIssueId = null;
-
-async function openIssueModal(issueId) {
-  _modalIssueId = issueId;
-  document.getElementById("issue-modal").classList.remove("hidden");
-  await refreshIssueModal();
-}
-
-document.getElementById("modal-close").addEventListener("click", () => {
-  document.getElementById("issue-modal").classList.add("hidden");
-  _modalIssueId = null;
-});
-
-async function refreshIssueModal() {
-  if (!_modalIssueId) return;
-  const issue = await api(`/issues/${_modalIssueId}`);
-  document.getElementById("modal-issue-title").textContent = issue.description;
-  document.getElementById("m-rule").textContent = issue.rule_id;
-  document.getElementById("m-risk").innerHTML = `<span class="badge badge-${issue.risk_level}">${esc(issue.risk_level)}</span>`;
-  document.getElementById("m-loc").textContent = issue.location || "—";
-  document.getElementById("m-status").textContent = STATUS_LABEL[issue.handle_status] || issue.handle_status;
-  document.getElementById("m-sugg").textContent = issue.suggestion || "—";
-
-  const fixBox = document.getElementById("m-fix-note-box");
-  fixBox.style.display = issue.fix_note ? "" : "none";
-  document.getElementById("m-fix-note").textContent = issue.fix_note || "";
-
-  const reviewBox = document.getElementById("m-review-note-box");
-  reviewBox.style.display = issue.review_note ? "" : "none";
-  document.getElementById("m-review-note").textContent = issue.review_note || "";
-
-  // 渲染按钮组（根据状态 + 当前用户角色）
-  renderActionButtons(issue);
-  await loadComments();
-}
-
-const ACTION_BUTTONS = {
-  // status -> [{ action, label, color, adminOnly, needsNote }, ...]
-  open: [
-    { action: "assign", label: "指派", adminOnly: true, needsAssignee: true },
-  ],
-  assigned: [
-    { action: "start", label: "开始整改" },
-    { action: "assign", label: "改派", adminOnly: true, needsAssignee: true },
-  ],
-  fixing: [
-    { action: "submit", label: "提交整改", needsNote: true, noteLabel: "整改说明" },
-  ],
-  reviewing: [
-    { action: "approve", label: "通过销号", adminOnly: true, needsNote: true,
-      noteLabel: "复核意见（可空）", optionalNote: true, color: "emerald" },
-    { action: "reject", label: "打回", adminOnly: true, needsNote: true,
-      noteLabel: "打回原因（必填）", color: "rose" },
-  ],
-  rejected: [
-    { action: "reopen", label: "重新整改" },
-  ],
-  resolved: [],
-};
-
-function renderActionButtons(issue) {
-  const box = document.getElementById("m-action-buttons");
-  const role = Auth.user?.role;
-  const isAdmin = role === "admin";
-  const actions = ACTION_BUTTONS[issue.handle_status] || [];
-  if (actions.length === 0) {
-    box.innerHTML = `<span class="text-sm text-slate-500">当前状态无可执行操作。</span>`;
-    return;
-  }
-  box.innerHTML = "";
-  actions.forEach(a => {
-    if (a.adminOnly && !isAdmin) return;
-    const btn = el(`<button class="btn-primary" style="${a.color === 'rose' ? 'background:#dc2626' : a.color === 'emerald' ? 'background:#059669' : ''}">${esc(a.label)}</button>`);
-    btn.addEventListener("click", () => openActionModal(issue, a));
-    box.appendChild(btn);
-  });
-}
-
-async function openActionModal(issue, action) {
-  document.getElementById("am-title").textContent = action.label;
-  document.getElementById("am-error").classList.add("hidden");
-  document.getElementById("am-note").value = "";
-
-  const assigneeBox = document.getElementById("am-assignee-box");
-  const noteBox = document.getElementById("am-note-box");
-  const noteLabel = document.getElementById("am-note-label");
-
-  if (action.needsAssignee) {
-    assigneeBox.style.display = "";
-    const users = await api("/users");
-    const sel = document.getElementById("am-assignee");
-    sel.innerHTML = users
-      .filter(u => u.is_active && u.role !== "admin")
-      .map(u => `<option value="${u.id}">${esc(u.username)}（${esc(u.role)}）${u.full_name ? ' - ' + esc(u.full_name) : ''}</option>`)
-      .join("") || `<option value="">— 无可选用户 —</option>`;
-  } else {
-    assigneeBox.style.display = "none";
-  }
-
-  if (action.needsNote) {
-    noteBox.style.display = "";
-    noteLabel.textContent = action.noteLabel || "说明";
-  } else {
-    noteBox.style.display = "none";
-  }
-
-  document.getElementById("action-modal").classList.remove("hidden");
-
-  document.getElementById("am-confirm").onclick = async () => {
-    const payload = {};
-    if (action.needsAssignee) {
-      const id = parseInt(document.getElementById("am-assignee").value);
-      if (!id) {
-        showActionError("请选择被指派人"); return;
-      }
-      payload.assignee_id = id;
-    }
-    if (action.needsNote) {
-      const note = document.getElementById("am-note").value.trim();
-      if (!note && !action.optionalNote) {
-        showActionError(`请填写${action.noteLabel || "说明"}`); return;
-      }
-      if (action.action === "submit") payload.fix_note = note;
-      else payload.review_note = note;
-    }
-    try {
-      await api(`/issues/${issue.id}/${action.action}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      document.getElementById("action-modal").classList.add("hidden");
-      await refreshIssueModal();
-    } catch (e) {
-      showActionError(e.message);
-    }
-  };
-}
-
-function showActionError(msg) {
-  const e = document.getElementById("am-error");
-  e.textContent = msg;
-  e.classList.remove("hidden");
-}
-
-document.getElementById("am-cancel").addEventListener("click", () => {
-  document.getElementById("action-modal").classList.add("hidden");
-});
-
-async function loadComments() {
-  if (!_modalIssueId) return;
-  const comments = await api(`/issues/${_modalIssueId}/comments`);
-  const box = document.getElementById("m-comments");
-  if (!comments.length) {
-    box.innerHTML = `<div class="text-sm text-slate-400 text-center py-4">暂无批注</div>`;
-    return;
-  }
-  box.innerHTML = comments.map(c => `
-    <div class="bg-slate-50 rounded p-2 border border-slate-200">
-      <div class="flex items-baseline justify-between">
-        <span class="font-medium text-sm">${esc(c.author_name)}</span>
-        <span class="text-xs text-slate-400">${fmtTime(c.created_at)}</span>
-      </div>
-      <div class="text-sm text-slate-700 mt-1 whitespace-pre-wrap">${esc(c.body)}</div>
-    </div>`).join("");
-  box.scrollTop = box.scrollHeight;
-}
-
-document.getElementById("m-comment-form").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  const input = document.getElementById("m-comment-body");
-  const body = input.value.trim();
-  if (!body || !_modalIssueId) return;
-  try {
-    await api(`/issues/${_modalIssueId}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body }),
-    });
-    input.value = "";
-    await loadComments();
-  } catch (e) {
-    alert("发送失败：" + e.message);
-  }
-});
-
-// ─── 联动校验 ─────────────────────────────────────────
-const CHAIN_CONFIGS = {
-  procurement: {
-    title: "招采链联动校验",
-    desc: "招标 → 投标 → 评标 → 合同 跨文件字段比对",
-    endpoint: "/chain-checks/async",
-    fields: [
-      { key: "tender_doc_id", label: "招标文件" },
-      { key: "bid_doc_id", label: "投标文件" },
-      { key: "eval_doc_id", label: "评标报告" },
-      { key: "contract_doc_id", label: "合同" },
-    ],
-  },
-  finance: {
-    title: "财务链联动校验",
-    desc: "财务报告 → 决算报告 → 资产报告 → 合同 数据交叉互验",
-    endpoint: "/chain-checks/finance/async",
-    fields: [
-      { key: "finance_doc_id", label: "财务报告" },
-      { key: "final_account_doc_id", label: "决算报告" },
-      { key: "asset_doc_id", label: "资产报告" },
-      { key: "contract_doc_ids", label: "合同（多选）", multi: true },
-    ],
-  },
-  report: {
-    title: "报告链联动校验",
-    desc: "内控报告 → 绩效报告 → 项目资料 内容交叉印证",
-    endpoint: "/chain-checks/report/async",
-    fields: [
-      { key: "ic_doc_id", label: "内控报告" },
-      { key: "perf_doc_id", label: "绩效评价报告" },
-      { key: "project_doc_id", label: "项目资料" },
-    ],
-  },
-};
-
-let activeChain = "procurement";
-
-document.querySelectorAll(".chain-tab").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".chain-tab").forEach(b => b.classList.remove("chain-active"));
-    btn.classList.add("chain-active");
-    activeChain = btn.dataset.chain;
-    renderChainForm();
-  });
-});
-
-function loadDocsForChain() {
-  renderChainForm();
-}
-
-function renderChainForm() {
-  const cfg = CHAIN_CONFIGS[activeChain];
-  document.getElementById("chain-title").textContent = cfg.title;
-  document.getElementById("chain-desc").textContent = cfg.desc;
-  document.getElementById("chain-result").classList.add("hidden");
-
-  const form = document.getElementById("chain-form");
-  form.innerHTML = "";
-  cfg.fields.forEach(f => {
-    const opts = `<option value="">— 不选 —</option>` +
-      State.docs.map(d => `<option value="${d.id}">[${d.id}] ${esc(d.file_name)}</option>`).join("");
-    form.appendChild(el(`
-      <div>
-        <label class="form-label">${esc(f.label)}</label>
-        <select name="${f.key}" class="form-input" ${f.multi ? "multiple size=4" : ""}>${opts}</select>
-        ${f.multi ? '<p class="text-xs text-slate-500 mt-1">按住 Ctrl/⌘ 多选</p>' : ""}
-      </div>
-    `));
-  });
-}
-
-document.getElementById("chain-submit").addEventListener("click", async () => {
-  const cfg = CHAIN_CONFIGS[activeChain];
-  const form = document.getElementById("chain-form");
-  const fd = new FormData(form);
-
-  // 构造 payload
-  const payload = {};
-  cfg.fields.forEach(f => {
-    if (f.multi) {
-      const sel = form.elements[f.key];
-      payload[f.key] = Array.from(sel.selectedOptions).map(o => parseInt(o.value)).filter(v => v);
+    const tbody = document.getElementById("dash-tasks-tbody");
+    if (!tasks.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center text-slate-400 py-6">暂无任务</td></tr>`;
     } else {
-      const v = fd.get(f.key);
-      payload[f.key] = v ? parseInt(v) : null;
+      tbody.innerHTML = tasks.slice(0, 8).map(t => {
+        const unit = units.find(u => u.id === t.unit_id);
+        return `<tr>
+          <td class="font-mono text-xs">${t.id}</td>
+          <td>${esc(unit ? unit.name : "—")}</td>
+          <td>${esc(t.name)}</td>
+          <td>${esc(t.eval_year)}</td>
+          <td><span class="cat-tag">${esc(t.status)}</span></td>
+          <td class="text-xs">${esc(t.summary || "—")}</td>
+        </tr>`;
+      }).join("");
     }
-  });
-
-  const status = document.getElementById("chain-status");
-  status.textContent = "联动校验中…";
-  status.className = "text-sm text-indigo-600";
-
-  try {
-    const initial = await api(cfg.endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const task = await pollTask(`/chain-checks/${initial.id}`, status);
-    if (task.status === "failed") throw new Error(task.summary || "联动校验失败");
-    State.chainCount += 1;
-    State.issueCount += task.issues.length;
-    document.getElementById("stat-chains").textContent = State.chainCount;
-    document.getElementById("stat-issues").textContent = State.issueCount;
-    renderChainResult(task);
-    status.textContent = `✓ 联动校验完成（任务 #${task.id}）`;
-    status.className = "text-sm text-emerald-600";
   } catch (e) {
-    status.textContent = "✗ " + e.message;
-    status.className = "text-sm text-rose-600";
+    console.error(e);
   }
-});
-
-function renderChainResult(task) {
-  document.getElementById("chain-result").classList.remove("hidden");
-  document.getElementById("chain-result-summary").textContent = task.summary;
-  try {
-    const fields = JSON.parse(task.extracted_fields || "{}");
-    document.getElementById("extracted-fields").textContent = JSON.stringify(fields, null, 2);
-  } catch {
-    document.getElementById("extracted-fields").textContent = task.extracted_fields || "（无）";
-  }
-  const tbody = document.getElementById("chain-issues-tbody");
-  tbody.innerHTML = "";
-  if (!task.issues.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-emerald-600 py-6">✓ 跨文件比对未发现不一致。</td></tr>`;
-    return;
-  }
-  task.issues.forEach((i, idx) => {
-    tbody.appendChild(el(`
-      <tr>
-        <td class="font-mono text-xs">${idx + 1}</td>
-        <td>${esc(i.description)}<div class="text-xs text-slate-400 mt-1">规则：${esc(i.rule_id)}</div></td>
-        <td class="text-xs text-slate-600">${esc(i.location || "—")}</td>
-        <td><span class="badge badge-${i.risk_level}">${esc(i.risk_level)}</span></td>
-        <td class="text-xs">${esc(i.suggestion || "—")}</td>
-      </tr>
-    `));
-  });
 }
 
-// ─── 批次管理 ─────────────────────────────────────────
-let _activeBatchId = null;
-
-async function loadBatches() {
+// ─── 核查任务 ─────────────────────────────────────────
+async function loadTasksTab() {
   try {
-    const batches = await api("/batches");
-    const tbody = document.getElementById("batches-tbody");
-    if (!batches.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-slate-400 py-6">暂无批次。请在上方创建批次。</td></tr>`;
+    const [units, tasks, indicators] = await Promise.all([
+      api("/units"), api("/tasks"), api("/indicators"),
+    ]);
+    State.units = units;
+    State.tasks = tasks;
+    State.indicators = indicators;
+
+    const unitSel = document.getElementById("task-unit-select");
+    unitSel.innerHTML = `<option value="">— 选择单位 —</option>` +
+      units.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join("");
+
+    const tbody = document.getElementById("tasks-tbody");
+    if (!tasks.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-slate-400 py-6">暂无任务</td></tr>`;
       return;
     }
     tbody.innerHTML = "";
-    batches.forEach(b => {
-      const row = el(`
-        <tr>
-          <td class="font-mono text-xs">${b.id}</td>
-          <td class="font-medium">${esc(b.name)}</td>
-          <td>${esc(b.project_id || "—")}</td>
-          <td>${esc(b.year || "—")}</td>
-          <td>${esc(b.department || "—")}</td>
-          <td class="text-xs text-slate-500">${fmtTime(b.created_at)}</td>
-          <td><button class="btn-secondary text-xs" data-id="${b.id}">查看</button></td>
-        </tr>`);
-      row.querySelector("button").addEventListener("click", () => openBatchDetail(b.id));
+    tasks.forEach(t => {
+      const unit = units.find(u => u.id === t.unit_id);
+      const row = el(`<tr>
+        <td class="font-mono text-xs">${t.id}</td>
+        <td>${esc(unit ? unit.name : "—")}</td>
+        <td>${esc(t.name)}</td>
+        <td>${esc(t.eval_year)}</td>
+        <td><span class="cat-tag">${esc(t.status)}</span></td>
+        <td class="text-xs">${esc(t.summary || "—")}</td>
+        <td><button class="btn-secondary text-xs" data-id="${t.id}">查看</button></td>
+      </tr>`);
+      row.querySelector("button").addEventListener("click", () => openTaskDetail(t.id));
       tbody.appendChild(row);
     });
   } catch (e) {
@@ -602,242 +170,346 @@ async function loadBatches() {
   }
 }
 
-document.getElementById("batch-create-form").addEventListener("submit", async ev => {
+document.getElementById("unit-create-form").addEventListener("submit", async ev => {
   ev.preventDefault();
   const fd = new FormData(ev.target);
-  const status = document.getElementById("batch-create-status");
   try {
-    const b = await api("/batches", {
+    await api("/units", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: fd.get("name"),
-        project_id: fd.get("project_id") || "",
-        year: fd.get("year") || "",
-        department: fd.get("department") || "",
+        name: fd.get("name"), code: fd.get("code"), level: fd.get("level"),
       }),
     });
-    status.textContent = `✓ 批次 #${b.id} 已创建`;
-    status.className = "text-sm mt-2 text-emerald-600";
     ev.target.reset();
-    loadBatches();
-    openBatchDetail(b.id);
-  } catch (e) {
-    status.textContent = "✗ " + e.message;
-    status.className = "text-sm mt-2 text-rose-600";
-  }
+    loadTasksTab();
+  } catch (e) { alert(e.message); }
 });
 
-document.getElementById("bd-close").addEventListener("click", () => {
-  document.getElementById("batch-detail").classList.add("hidden");
-  _activeBatchId = null;
+document.getElementById("task-create-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  try {
+    const t = await api("/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unit_id: parseInt(fd.get("unit_id")),
+        name: fd.get("name"),
+        eval_year: parseInt(fd.get("eval_year")),
+      }),
+    });
+    ev.target.reset();
+    await loadTasksTab();
+    openTaskDetail(t.id);
+  } catch (e) { alert(e.message); }
 });
 
-async function openBatchDetail(batchId) {
-  _activeBatchId = batchId;
-  document.getElementById("batch-detail").classList.remove("hidden");
-  await refreshBatchDetail();
+async function openTaskDetail(taskId) {
+  State.activeTaskId = taskId;
+  document.getElementById("task-detail").classList.remove("hidden");
+  await refreshTaskDetail();
 }
 
-const CHAIN_LABELS = { procurement: "招采链", finance: "财务链", report: "报告链" };
+document.getElementById("td-close").addEventListener("click", () => {
+  document.getElementById("task-detail").classList.add("hidden");
+  State.activeTaskId = null;
+});
 
-async function refreshBatchDetail() {
-  if (!_activeBatchId) return;
-  const data = await api(`/batches/${_activeBatchId}`);
-  const b = data.batch;
-  document.getElementById("bd-title").textContent = `批次 #${b.id} · ${b.name}`;
-  document.getElementById("bd-meta").textContent =
-    `${b.project_id || ""} ${b.year || ""} ${b.department || ""}`.trim() || "无附加信息";
+async function refreshTaskDetail() {
+  if (!State.activeTaskId) return;
+  const detail = await api(`/tasks/${State.activeTaskId}`);
+  document.getElementById("td-title").textContent =
+    `任务 #${detail.task.id} · ${detail.task.name}`;
+  document.getElementById("td-meta").textContent =
+    `${detail.unit.name} · ${detail.task.eval_year} 年度 · 状态: ${detail.task.status}`;
 
-  const s = data.summary;
-  const sumBox = document.getElementById("bd-summary");
-  sumBox.innerHTML = `
+  // 指标下拉
+  const indSel = document.getElementById("md-indicator-select");
+  indSel.innerHTML = `<option value="">— 选择指标 —</option>` +
+    State.indicators.map(i =>
+      `<option value="${i.id}">[${esc(i.indicator_code)}] ${esc(i.name)}</option>`
+    ).join("");
+
+  // 材料列表
+  const mbody = document.getElementById("td-materials-tbody");
+  if (!detail.materials.length) {
+    mbody.innerHTML = `<tr><td colspan="4" class="text-center text-slate-400 py-4">尚未上传材料</td></tr>`;
+  } else {
+    mbody.innerHTML = detail.materials.map(m => {
+      const ind = State.indicators.find(i => i.id === m.indicator_id);
+      let ke = {};
+      try { ke = JSON.parse(m.key_elements || "{}"); } catch {}
+      const kebadges = [
+        ke.has_official_seal ? '<span class="badge badge-low">公章</span>' : '<span class="badge badge-high">无公章</span>',
+        ke.has_signature ? '<span class="badge badge-low">签字</span>' : '<span class="badge badge-mid">无签字</span>',
+        ke.issue_year ? `<span class="badge badge-low">${ke.issue_year}年</span>` : '<span class="badge badge-high">无日期</span>',
+        ke.is_draft ? '<span class="badge badge-high">草稿</span>' : '',
+      ].filter(Boolean).join(" ");
+      return `<tr>
+        <td class="font-mono text-xs">${m.id}</td>
+        <td>${esc(m.file_name)}</td>
+        <td>${ind ? esc(ind.indicator_code) + " " + esc(ind.name) : "—"}</td>
+        <td>${kebadges}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  // Findings 汇总
+  const findings = detail.findings;
+  const sevCount = { 高: 0, 中: 0, 低: 0 };
+  findings.forEach(f => { sevCount[f.severity] = (sevCount[f.severity] || 0) + 1; });
+  document.getElementById("td-summary").innerHTML = `
     <div class="bg-slate-50 rounded p-3 border border-slate-200">
-      <div class="text-xs text-slate-500">文档总数</div>
-      <div class="text-2xl font-semibold mt-1">${s.documents_total}</div>
-    </div>
-    <div class="bg-slate-50 rounded p-3 border border-slate-200">
-      <div class="text-xs text-slate-500">检查任务</div>
-      <div class="text-2xl font-semibold mt-1">${s.check_tasks.length}</div>
-    </div>
-    <div class="bg-slate-50 rounded p-3 border border-slate-200">
-      <div class="text-xs text-slate-500">联动校验</div>
-      <div class="text-2xl font-semibold mt-1">${s.chain_tasks.length}</div>
+      <div class="text-xs text-slate-500">材料数</div><div class="text-xl font-semibold mt-1">${detail.materials.length}</div>
     </div>
     <div class="bg-rose-50 rounded p-3 border border-rose-200">
-      <div class="text-xs text-rose-600">疑点总数</div>
-      <div class="text-2xl font-semibold text-rose-700 mt-1">${s.issues_total}</div>
-      <div class="text-xs text-slate-500 mt-1">高 ${s.issues_by_risk["高"] || 0} · 中 ${s.issues_by_risk["中"] || 0} · 低 ${s.issues_by_risk["低"] || 0}</div>
+      <div class="text-xs text-rose-600">高风险</div><div class="text-xl font-semibold mt-1 text-rose-700">${sevCount.高}</div>
+    </div>
+    <div class="bg-amber-50 rounded p-3 border border-amber-200">
+      <div class="text-xs text-amber-700">中风险</div><div class="text-xl font-semibold mt-1 text-amber-800">${sevCount.中}</div>
+    </div>
+    <div class="bg-slate-50 rounded p-3 border border-slate-200">
+      <div class="text-xs text-slate-500">低风险</div><div class="text-xl font-semibold mt-1">${sevCount.低}</div>
     </div>
   `;
 
-  const checkTbody = document.getElementById("bd-check-tbody");
-  checkTbody.innerHTML = s.check_tasks.length === 0
-    ? `<tr><td colspan="5" class="text-center text-slate-400 py-4">尚无检查任务</td></tr>`
-    : s.check_tasks.map(t => `
-        <tr>
-          <td class="font-mono text-xs">#${t.id}</td>
-          <td class="text-xs">文档 #${t.document_id}</td>
-          <td><span class="cat-tag">${esc(t.template_key)}</span></td>
-          <td><span class="cat-tag">${esc(t.status)}</span></td>
-          <td class="text-xs">${esc(t.summary || "—")}</td>
-        </tr>`).join("");
-
-  const chainTbody = document.getElementById("bd-chain-tbody");
-  chainTbody.innerHTML = s.chain_tasks.length === 0
-    ? `<tr><td colspan="4" class="text-center text-slate-400 py-4">尚未触发联动校验（需批次内文档凑齐对应链路）</td></tr>`
-    : s.chain_tasks.map(t => `
-        <tr>
-          <td class="font-mono text-xs">#${t.id}</td>
-          <td>${esc(CHAIN_LABELS[t.chain_type] || t.chain_type)}</td>
-          <td><span class="cat-tag">${esc(t.status)}</span></td>
-          <td class="text-xs">${esc(t.summary || "—")}</td>
-        </tr>`).join("");
+  const fbody = document.getElementById("td-findings-tbody");
+  if (!findings.length) {
+    fbody.innerHTML = `<tr><td colspan="7" class="text-center text-emerald-600 py-4">✓ 暂无 Finding</td></tr>`;
+  } else {
+    fbody.innerHTML = "";
+    findings.forEach((f, idx) => {
+      const row = el(`<tr>
+        <td class="font-mono text-xs">${idx + 1}</td>
+        <td><span class="cat-tag">${esc(f.finding_type)}</span></td>
+        <td><span class="badge badge-${f.severity}">${esc(f.severity)}</span></td>
+        <td class="text-xs">${esc(f.description)}<div class="text-xs text-slate-400 mt-1">${esc(f.evidence_location || "")}</div></td>
+        <td class="text-xs">${esc(f.suggestion || "—")}</td>
+        <td><span class="cat-tag">${esc(f.review_status)}</span></td>
+        <td>
+          <span class="cat-tag">${esc(f.rectification_status)}</span>
+          <button class="btn-secondary text-xs ml-1" data-fid="${f.id}">详情</button>
+        </td>
+      </tr>`);
+      row.querySelector("button").addEventListener("click", () => openFindingModal(f));
+      fbody.appendChild(row);
+    });
+  }
 }
 
-document.getElementById("batch-upload-form").addEventListener("submit", async ev => {
+document.getElementById("material-upload-form").addEventListener("submit", async ev => {
   ev.preventDefault();
-  if (!_activeBatchId) return;
+  if (!State.activeTaskId) return;
+  const indId = document.getElementById("md-indicator-select").value;
+  const fileInput = document.getElementById("md-file");
+  if (!fileInput.files.length || !indId) {
+    alert("请选择指标并选择文件"); return;
+  }
   const fd = new FormData();
-  const fileInput = document.getElementById("bd-files");
-  if (!fileInput.files.length) return;
-  for (const f of fileInput.files) fd.append("files", f);
-
-  const status = document.getElementById("bd-upload-status");
-  status.textContent = `上传中（${fileInput.files.length} 个文件）…`;
+  fd.append("file", fileInput.files[0]);
+  fd.append("indicator_id", indId);
+  const status = document.getElementById("md-upload-status");
+  status.textContent = "上传解析中…";
   status.className = "text-sm mt-2 text-indigo-600";
   try {
     const tok = getToken();
-    const r = await fetch(`${API}/batches/${_activeBatchId}/upload`, {
+    const r = await fetch(`${API}/tasks/${State.activeTaskId}/materials`, {
       method: "POST",
       headers: { "Authorization": "Bearer " + tok },
       body: fd,
     });
     if (!r.ok) throw new Error(await r.text());
-    const result = await r.json();
-    // 展示分类结果
-    const resultsBox = document.getElementById("bd-upload-results");
-    resultsBox.innerHTML = `
-      <table class="table mt-2">
-        <thead><tr><th>文件</th><th>识别分类</th><th>方式</th><th>检查任务</th><th>状态</th></tr></thead>
-        <tbody>${result.items.map(i => `
-          <tr>
-            <td class="text-xs">${esc(i.file_name)}</td>
-            <td><span class="cat-tag">${esc(i.category || "—")}</span>${i.subcategory ? ' / ' + esc(i.subcategory) : ''}</td>
-            <td class="text-xs text-slate-500">${esc(i.method)} (${(i.confidence * 100).toFixed(0)}%)</td>
-            <td class="text-xs">${i.check_task_id ? '#' + i.check_task_id : '—'}</td>
-            <td class="text-xs ${i.error ? 'text-rose-600' : 'text-emerald-600'}">${i.error || '✓ 已入队'}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
-      ${Object.keys(result.triggered_chains || {}).length > 0 ? `
-        <div class="mt-3 p-3 bg-indigo-50 border border-indigo-200 rounded text-sm">
-          <strong>自动触发联动校验：</strong>
-          ${Object.entries(result.triggered_chains).map(([k, v]) =>
-            `${CHAIN_LABELS[k] || k} (任务 #${v})`).join(" / ")}
-        </div>` : ""}
-    `;
-    status.textContent = `✓ 上传完成`;
+    status.textContent = "✓ 上传成功";
     status.className = "text-sm mt-2 text-emerald-600";
     fileInput.value = "";
-    // 短暂等待 worker 完成后刷新
-    setTimeout(refreshBatchDetail, 1500);
+    await refreshTaskDetail();
   } catch (e) {
     status.textContent = "✗ " + e.message;
     status.className = "text-sm mt-2 text-rose-600";
   }
 });
 
-document.getElementById("bd-retrigger").addEventListener("click", async () => {
-  if (!_activeBatchId) return;
+document.getElementById("td-run").addEventListener("click", async () => {
+  if (!State.activeTaskId) return;
+  const status = document.getElementById("td-run-status");
+  status.textContent = "AI 核查中…（可能耗时数十秒）";
+  status.className = "text-sm text-indigo-600";
   try {
-    const r = await api(`/batches/${_activeBatchId}/retrigger`, { method: "POST" });
-    alert(`重新触发：${JSON.stringify(r.triggered)}`);
-    setTimeout(refreshBatchDetail, 1500);
+    await api(`/tasks/${State.activeTaskId}/run`, { method: "POST" });
+    // eager 模式下立即完成；生产模式轮询
+    let task = await api(`/tasks/${State.activeTaskId}`);
+    for (let i = 0; i < 60 && task.task.status === "running"; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      task = await api(`/tasks/${State.activeTaskId}`);
+    }
+    status.textContent = `✓ 完成：${task.task.summary || ""}`;
+    status.className = "text-sm text-emerald-600";
+    await refreshTaskDetail();
   } catch (e) {
-    alert("失败：" + e.message);
+    status.textContent = "✗ " + e.message;
+    status.className = "text-sm text-rose-600";
   }
 });
 
-// ─── 认证 ─────────────────────────────────────────────
-const Auth = { user: null, roleLabel: "", allowedCategories: [] };
-
-function showLogin(msg = "") {
-  document.getElementById("login-modal").classList.remove("hidden");
-  const errBox = document.getElementById("login-error");
-  if (msg) {
-    errBox.textContent = msg;
-    errBox.classList.remove("hidden");
-  } else {
-    errBox.classList.add("hidden");
-  }
-}
-
-function hideLogin() {
-  document.getElementById("login-modal").classList.add("hidden");
-}
-
-function renderUserBar() {
-  const bar = document.getElementById("user-bar");
-  if (!Auth.user) {
-    bar.innerHTML = "";
-    return;
-  }
-  bar.innerHTML = `
-    <span class="text-sm">
-      <span class="font-medium">${esc(Auth.user.full_name || Auth.user.username)}</span>
-      <span class="text-xs text-slate-400 ml-1">· ${esc(Auth.roleLabel)}</span>
-    </span>
-    <button id="logout-btn" class="btn-secondary text-xs">退出</button>
-  `;
-  document.getElementById("logout-btn").addEventListener("click", async () => {
-    try { await api("/auth/logout", { method: "POST" }); } catch {}
-    setToken("");
-    Auth.user = null;
-    renderUserBar();
-    document.getElementById("nav-admin").style.display = "none";
-    showLogin();
-  });
-  document.getElementById("nav-admin").style.display =
-    Auth.user.role === "admin" ? "" : "none";
-}
-
-document.getElementById("login-form").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  const fd = new FormData(ev.target);
+document.getElementById("td-finalize").addEventListener("click", async () => {
+  if (!State.activeTaskId) return;
   try {
-    const r = await fetch(API + "/auth/login", {
+    await api(`/tasks/${State.activeTaskId}/finalize`, { method: "POST" });
+    await refreshTaskDetail();
+  } catch (e) { alert(e.message); }
+});
+
+// ─── Finding 模态 ─────────────────────────────────────
+function openFindingModal(f) {
+  State.activeFindingId = f.id;
+  document.getElementById("finding-modal").classList.remove("hidden");
+  document.getElementById("fm-title").textContent = `[${f.finding_type}] 风险 ${f.severity}`;
+  document.getElementById("fm-body").innerHTML = `
+    <div><span class="text-slate-500">问题描述：</span>${esc(f.description)}</div>
+    <div><span class="text-slate-500">位置：</span>${esc(f.evidence_location || "—")}</div>
+    <div><span class="text-slate-500">法规依据：</span>${esc(f.legal_basis || "—")}</div>
+    <div><span class="text-slate-500">建议：</span>${esc(f.suggestion || "—")}</div>
+    <div><span class="text-slate-500">来源：</span>${esc(f.source)}</div>
+    <div><span class="text-slate-500">复核状态：</span>${esc(f.review_status)} ${f.review_note ? '— ' + esc(f.review_note) : ''}</div>
+    <div><span class="text-slate-500">整改状态：</span>${esc(f.rectification_status)} ${f.rectification_note ? '— ' + esc(f.rectification_note) : ''}</div>
+  `;
+  document.getElementById("fm-review-note").value = f.review_note || "";
+  document.getElementById("fm-rectify-note").value = f.rectification_note || "";
+}
+
+document.getElementById("fm-close").addEventListener("click", () => {
+  document.getElementById("finding-modal").classList.add("hidden");
+  State.activeFindingId = null;
+});
+
+document.querySelectorAll(".fm-review-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    if (!State.activeFindingId) return;
+    const note = document.getElementById("fm-review-note").value;
+    try {
+      await api(`/findings/${State.activeFindingId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: btn.dataset.status, note }),
+      });
+      document.getElementById("finding-modal").classList.add("hidden");
+      await refreshTaskDetail();
+    } catch (e) { alert(e.message); }
+  });
+});
+
+document.getElementById("fm-rectify-btn").addEventListener("click", async () => {
+  if (!State.activeFindingId) return;
+  const note = document.getElementById("fm-rectify-note").value;
+  if (!note.trim()) { alert("请填写整改说明"); return; }
+  try {
+    await api(`/findings/${State.activeFindingId}/rectify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: fd.get("username"),
-        password: fd.get("password"),
-      }),
+      body: JSON.stringify({ note }),
     });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({ detail: "登录失败" }));
-      throw new Error(err.detail || "登录失败");
-    }
-    const data = await r.json();
-    setToken(data.token);
-    Auth.user = data.user;
-    Auth.roleLabel = data.role_label;
-    Auth.allowedCategories = data.allowed_categories;
-    hideLogin();
-    renderUserBar();
-    loadDashboard();
-  } catch (e) {
-    showLogin(e.message);
-  }
+    document.getElementById("finding-modal").classList.add("hidden");
+    await refreshTaskDetail();
+  } catch (e) { alert(e.message); }
 });
 
-// ─── 系统管理（仅管理员）─────────────────────────────
+document.getElementById("fm-resolve-btn").addEventListener("click", async () => {
+  if (!State.activeFindingId) return;
+  const note = document.getElementById("fm-rectify-note").value;
+  try {
+    await api(`/findings/${State.activeFindingId}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    });
+    document.getElementById("finding-modal").classList.add("hidden");
+    await refreshTaskDetail();
+  } catch (e) { alert(e.message); }
+});
+
+// ─── 知识库 ───────────────────────────────────────────
+async function loadKnowledgeTab() {
+  try {
+    const [inds, items] = await Promise.all([
+      api("/indicators"), api("/check-items"),
+    ]);
+    State.indicators = inds;
+    State.checkItems = items;
+    const itbody = document.getElementById("indicators-tbody");
+    if (!inds.length) {
+      itbody.innerHTML = `<tr><td colspan="6" class="text-center text-slate-400 py-4">暂无指标。请使用「批量导入」上传 JSON。</td></tr>`;
+    } else {
+      itbody.innerHTML = inds.map(i => {
+        let mats = [];
+        try { mats = JSON.parse(i.required_materials || "[]"); } catch {}
+        return `<tr>
+          <td class="font-mono text-xs">${esc(i.indicator_code)}</td>
+          <td>${esc(i.level)}</td>
+          <td><span class="cat-tag">${esc(i.category)}</span></td>
+          <td>${esc(i.name)}</td>
+          <td>${i.max_score}</td>
+          <td class="text-xs">${mats.length ? esc(mats.join("、")) : "—"}</td>
+        </tr>`;
+      }).join("");
+    }
+    const cbody = document.getElementById("items-tbody");
+    if (!items.length) {
+      cbody.innerHTML = `<tr><td colspan="6" class="text-center text-slate-400 py-4">暂无条目</td></tr>`;
+    } else {
+      cbody.innerHTML = items.map(it => `<tr>
+        <td class="font-mono text-xs">${esc(it.item_code)}</td>
+        <td><span class="cat-tag">${esc(it.dimension)}</span></td>
+        <td>${esc(it.subcategory)}</td>
+        <td class="text-xs">${esc(it.description)}</td>
+        <td><span class="cat-tag">${esc(it.check_method)}</span></td>
+        <td><span class="badge badge-${it.risk_level}">${esc(it.risk_level)}</span></td>
+      </tr>`).join("");
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function importJson(endpoint, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const tok = getToken();
+  const r = await fetch(API + endpoint, {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + tok },
+    body: fd,
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+document.getElementById("import-indicators-file").addEventListener("change", async ev => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  try {
+    const result = await importJson("/indicators/import", file);
+    alert(`导入完成：创建 ${result.created}，跳过 ${result.skipped}`);
+    loadKnowledgeTab();
+  } catch (e) { alert("导入失败：" + e.message); }
+});
+
+document.getElementById("import-items-file").addEventListener("change", async ev => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  try {
+    const result = await importJson("/check-items/import", file);
+    alert(`导入完成：创建 ${result.created}，跳过 ${result.skipped}`);
+    loadKnowledgeTab();
+  } catch (e) { alert("导入失败：" + e.message); }
+});
+
+// ─── 系统管理 ─────────────────────────────────────────
 async function loadAdmin() {
-  if (!Auth.user || Auth.user.role !== "admin") return;
+  if (!State.user || State.user.role !== "super_admin") return;
   try {
     const users = await api("/users");
-    const utbody = document.getElementById("users-tbody");
-    utbody.innerHTML = users.map(u => `
+    document.getElementById("users-tbody").innerHTML = users.map(u => `
       <tr>
         <td class="font-mono text-xs">${u.id}</td>
         <td>${esc(u.username)}</td>
@@ -847,18 +519,15 @@ async function loadAdmin() {
       </tr>`).join("");
 
     const logs = await api("/audit-logs?limit=100");
-    const atbody = document.getElementById("audit-tbody");
-    atbody.innerHTML = logs.map(l => `
+    document.getElementById("audit-tbody").innerHTML = logs.map(l => `
       <tr>
         <td class="text-xs text-slate-500">${fmtTime(l.created_at)}</td>
         <td>${esc(l.username || "—")}</td>
         <td><span class="cat-tag">${esc(l.action)}</span></td>
         <td class="text-xs">${esc(l.target_type)}${l.target_id ? ' #' + l.target_id : ''}</td>
         <td class="text-xs text-slate-600">${esc(l.detail || "—")}</td>
-      </tr>`).join("") || `<tr><td colspan="5" class="text-center text-slate-400 py-4">无日志</td></tr>`;
-  } catch (e) {
-    console.error(e);
-  }
+      </tr>`).join("");
+  } catch (e) { console.error(e); }
 }
 
 document.getElementById("user-form").addEventListener("submit", async ev => {
@@ -888,24 +557,141 @@ document.getElementById("user-form").addEventListener("submit", async ev => {
 
 document.getElementById("refresh-audit").addEventListener("click", loadAdmin);
 
-// 给「系统管理」tab 注册 loadAdmin 钩子（覆盖原 nav-tab 行为）
-document.querySelector('[data-tab="admin"]').addEventListener("click", loadAdmin);
+// ─── 系统设置 - LLM Key ───────────────────────────────
+async function loadSettings() {
+  if (!State.user || State.user.role !== "super_admin") return;
+  try {
+    const cfg = await api("/settings/llm");
+    const form = document.getElementById("llm-form");
+    form.provider.value = cfg.provider;
+    form.model.value = cfg.model;
+    form.base_url.value = cfg.base_url;
+    form.thinking_mode.value = cfg.thinking_mode;
+    form.api_key.value = "";  // 永远不回显明文
+    document.getElementById("llm-key-hint").textContent =
+      cfg.has_api_key
+        ? "✓ 当前已配置 API Key（保存时留空则不修改；输入空格再保存则清空）"
+        : "尚未配置，请填入 DeepSeek API Key（sk-...）";
+    document.getElementById("llm-status").textContent = "";
+  } catch (e) { console.error(e); }
+}
+
+document.getElementById("llm-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const status = document.getElementById("llm-status");
+  // api_key 为空表示不变；用户实际想清空可以输入一个空格
+  const apiKey = fd.get("api_key");
+  const payload = {
+    provider: fd.get("provider"),
+    model: fd.get("model"),
+    base_url: fd.get("base_url"),
+    thinking_mode: fd.get("thinking_mode"),
+  };
+  if (apiKey !== "") payload.api_key = apiKey.trim();
+  try {
+    await api("/settings/llm", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    status.textContent = "✓ 已保存";
+    status.className = "text-sm text-emerald-600";
+    loadSettings();
+  } catch (e) {
+    status.textContent = "✗ " + e.message;
+    status.className = "text-sm text-rose-600";
+  }
+});
+
+document.getElementById("llm-test-btn").addEventListener("click", async () => {
+  const status = document.getElementById("llm-status");
+  status.textContent = "测试中…";
+  status.className = "text-sm text-indigo-600";
+  try {
+    const r = await api("/settings/llm/test", { method: "POST" });
+    if (r.success) {
+      status.textContent = `✓ ${r.client} 连接成功；预览：${(r.preview || "").slice(0, 50)}`;
+      status.className = "text-sm text-emerald-600";
+    } else {
+      status.textContent = `✗ ${r.client} 连接失败：${r.error}`;
+      status.className = "text-sm text-rose-600";
+    }
+  } catch (e) {
+    status.textContent = "✗ " + e.message;
+    status.className = "text-sm text-rose-600";
+  }
+});
+
+// ─── 认证 ─────────────────────────────────────────────
+function showLogin(msg = "") {
+  document.getElementById("login-modal").classList.remove("hidden");
+  const errBox = document.getElementById("login-error");
+  if (msg) { errBox.textContent = msg; errBox.classList.remove("hidden"); }
+  else { errBox.classList.add("hidden"); }
+}
+function hideLogin() {
+  document.getElementById("login-modal").classList.add("hidden");
+}
+
+function renderUserBar() {
+  const bar = document.getElementById("user-bar");
+  if (!State.user) { bar.innerHTML = ""; return; }
+  bar.innerHTML = `
+    <span class="text-sm">
+      <span class="font-medium">${esc(State.user.full_name || State.user.username)}</span>
+      <span class="text-xs text-slate-400 ml-1">· ${esc(State.roleLabel)}</span>
+    </span>
+    <button id="logout-btn" class="btn-secondary text-xs">退出</button>
+  `;
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    try { await api("/auth/logout", { method: "POST" }); } catch {}
+    setToken(""); State.user = null;
+    renderUserBar();
+    document.getElementById("nav-admin").style.display = "none";
+    document.getElementById("nav-settings").style.display = "none";
+    showLogin();
+  });
+  const showAdminTabs = State.user.role === "super_admin";
+  document.getElementById("nav-admin").style.display = showAdminTabs ? "" : "none";
+  document.getElementById("nav-settings").style.display = showAdminTabs ? "" : "none";
+}
+
+document.getElementById("login-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  try {
+    const r = await fetch(API + "/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: fd.get("username"), password: fd.get("password") }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: "登录失败" }));
+      throw new Error(err.detail || "登录失败");
+    }
+    const data = await r.json();
+    setToken(data.token);
+    State.user = data.user;
+    State.roleLabel = data.role_label;
+    hideLogin();
+    renderUserBar();
+    loadDashboard();
+  } catch (e) { showLogin(e.message); }
+});
 
 // ─── 启动 ─────────────────────────────────────────────
 async function bootstrap() {
   if (getToken()) {
     try {
       const data = await api("/auth/me");
-      Auth.user = data.user;
-      Auth.roleLabel = data.role_label;
-      Auth.allowedCategories = data.allowed_categories;
+      State.user = data.user;
+      State.roleLabel = data.role_label;
       hideLogin();
       renderUserBar();
       loadDashboard();
       return;
-    } catch {
-      // token 失效 → 落到登录界面
-    }
+    } catch {}
   }
   showLogin();
 }

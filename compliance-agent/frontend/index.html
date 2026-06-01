@@ -9,24 +9,22 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
-  <!-- 顶部导航 -->
   <header class="bg-white shadow-sm border-b sticky top-0 z-10">
     <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-600 to-blue-500 flex items-center justify-center text-white font-bold">合</div>
         <div>
-          <h1 class="text-lg font-semibold">行政事业单位文档合规检查智能体</h1>
-          <p class="text-xs text-slate-500">7 套检查模板 · 3 条联动校验链 · 全流程留痕</p>
+          <h1 class="text-lg font-semibold">内控评价智能审核系统</h1>
+          <p class="text-xs text-slate-500">站在上级复核方视角 · AI 辅助审查 · 全程留痕</p>
         </div>
       </div>
       <div class="flex items-center gap-4">
         <nav class="flex gap-1">
           <button class="nav-tab tab-active" data-tab="dashboard">仪表板</button>
-          <button class="nav-tab" data-tab="batches">批次管理</button>
-          <button class="nav-tab" data-tab="documents">文档管理</button>
-          <button class="nav-tab" data-tab="checks">单文件检查</button>
-          <button class="nav-tab" data-tab="chains">联动校验</button>
+          <button class="nav-tab" data-tab="tasks">核查任务</button>
+          <button class="nav-tab" data-tab="knowledge">知识库</button>
           <button class="nav-tab" data-tab="admin" id="nav-admin" style="display:none">系统管理</button>
+          <button class="nav-tab" data-tab="settings" id="nav-settings" style="display:none">系统设置</button>
         </nav>
         <div id="user-bar" class="text-sm text-slate-600 flex items-center gap-2"></div>
       </div>
@@ -39,14 +37,8 @@
       <h2 class="text-lg font-semibold">登录</h2>
       <p class="text-xs text-slate-500 mt-1">默认管理员：admin / admin123（首次部署后请尽快修改密码）</p>
       <form id="login-form" class="mt-4 space-y-3">
-        <div>
-          <label class="form-label">用户名</label>
-          <input name="username" class="form-input" required autofocus />
-        </div>
-        <div>
-          <label class="form-label">密码</label>
-          <input name="password" type="password" class="form-input" required />
-        </div>
+        <div><label class="form-label">用户名</label><input name="username" class="form-input" required autofocus /></div>
+        <div><label class="form-label">密码</label><input name="password" type="password" class="form-input" required /></div>
         <div id="login-error" class="text-sm text-rose-600 hidden"></div>
         <button type="submit" class="btn-primary w-full">登录</button>
       </form>
@@ -57,335 +49,167 @@
     <!-- ───────── 仪表板 ───────── -->
     <section id="tab-dashboard" class="tab-panel">
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="card"><div class="stat-label">已上传文档</div><div id="stat-docs" class="stat-value">—</div></div>
-        <div class="card"><div class="stat-label">已完成单文件检查</div><div id="stat-checks" class="stat-value">—</div></div>
-        <div class="card"><div class="stat-label">已完成联动校验</div><div id="stat-chains" class="stat-value">—</div></div>
-        <div class="card"><div class="stat-label">疑点总数</div><div id="stat-issues" class="stat-value text-rose-600">—</div></div>
+        <div class="card"><div class="stat-label">被检查单位</div><div id="stat-units" class="stat-value">—</div></div>
+        <div class="card"><div class="stat-label">核查任务</div><div id="stat-tasks" class="stat-value">—</div></div>
+        <div class="card"><div class="stat-label">评价指标</div><div id="stat-indicators" class="stat-value">—</div></div>
+        <div class="card"><div class="stat-label">问题清单条目</div><div id="stat-check-items" class="stat-value">—</div></div>
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="card lg:col-span-2">
-          <h2 class="card-title">7 套检查模板</h2>
-          <div id="templates-grid" class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3"></div>
+          <h2 class="card-title">最近核查任务</h2>
+          <div class="mt-3 overflow-x-auto">
+            <table class="table">
+              <thead><tr><th>ID</th><th>单位</th><th>任务名</th><th>年度</th><th>状态</th><th>结论摘要</th></tr></thead>
+              <tbody id="dash-tasks-tbody"></tbody>
+            </table>
+          </div>
         </div>
         <div class="card">
           <h2 class="card-title">系统状态</h2>
           <div id="health-info" class="mt-3 space-y-2 text-sm"></div>
           <div class="mt-4 pt-4 border-t">
-            <h3 class="font-medium text-sm text-slate-600 mb-2">联动校验链</h3>
-            <ul class="text-sm space-y-1.5 text-slate-700">
-              <li>· 招采链：招标 → 投标 → 评标 → 合同</li>
-              <li>· 财务链：财务 → 决算 → 资产 → 合同</li>
-              <li>· 报告链：内控 → 绩效 → 项目资料</li>
+            <h3 class="font-medium text-sm text-slate-600 mb-2">5 大检查维度</h3>
+            <ul class="text-sm space-y-1 text-slate-700">
+              <li>· 总体合规性：真实性 / 年度 / 正式性 / 完整性</li>
+              <li>· 相关性核查：6 大业务覆盖</li>
+              <li>· 评分合规性</li>
+              <li>· 复核规范性</li>
+              <li>· 报告编报合规性</li>
             </ul>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ───────── 批次管理（迎检场景）───────── -->
-    <section id="tab-batches" class="tab-panel hidden">
+    <!-- ───────── 核查任务 ───────── -->
+    <section id="tab-tasks" class="tab-panel hidden">
       <div class="card mb-6">
-        <h2 class="card-title">创建批次</h2>
-        <p class="text-xs text-slate-500 mt-1">一个批次对应一次迎检 / 一个审计项目。创建后可一次性上传该项目全套资料，系统会自动分类、批量检查、并触发对应联动链。</p>
-        <form id="batch-create-form" class="mt-3 grid grid-cols-1 md:grid-cols-5 gap-3">
-          <input name="name" placeholder="批次名称（必填）" class="form-input" required />
-          <input name="project_id" placeholder="项目编号" class="form-input" />
-          <input name="year" placeholder="年度" class="form-input" />
-          <input name="department" placeholder="单位/部门" class="form-input" />
-          <button type="submit" class="btn-primary">创建批次</button>
+        <h2 class="card-title">创建核查任务</h2>
+        <p class="text-xs text-slate-500 mt-1">先选择被检查单位 → 创建年度核查任务 → 上传材料并绑定评价指标 → 触发 AI 初核。</p>
+        <form id="task-create-form" class="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3">
+          <select name="unit_id" id="task-unit-select" class="form-input" required>
+            <option value="">— 选择单位 —</option>
+          </select>
+          <input name="name" placeholder="任务名称（如「2025 年度核查」）" class="form-input" required />
+          <input name="eval_year" type="number" value="2025" min="2000" max="2099" class="form-input" required />
+          <button type="submit" class="btn-primary">创建任务</button>
         </form>
-        <div id="batch-create-status" class="text-sm mt-2"></div>
-      </div>
-
-      <div class="card mb-6">
-        <h2 class="card-title">批次列表</h2>
-        <div class="mt-3 overflow-x-auto">
-          <table class="table">
-            <thead><tr><th>ID</th><th>批次名</th><th>项目</th><th>年度</th><th>单位</th><th>创建时间</th><th>操作</th></tr></thead>
-            <tbody id="batches-tbody"><tr><td colspan="7" class="text-center text-slate-400 py-6">加载中…</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- 批次详情区（点击批次后展开） -->
-      <div id="batch-detail" class="card hidden">
-        <div class="flex items-start justify-between">
-          <div>
-            <h2 class="card-title" id="bd-title">批次详情</h2>
-            <p id="bd-meta" class="text-xs text-slate-500 mt-1"></p>
-          </div>
-          <button id="bd-close" class="btn-secondary text-sm">收起</button>
-        </div>
-
-        <!-- 批量上传 -->
-        <div class="mt-4 pt-4 border-t">
-          <h3 class="text-sm font-medium text-slate-700 mb-2">批量上传文档（自动分类）</h3>
-          <form id="batch-upload-form" class="flex items-center gap-2">
-            <input type="file" name="files" id="bd-files" multiple accept=".txt,.md,.docx,.pdf,.xlsx" class="form-input flex-1" required />
-            <button type="submit" class="btn-primary">上传并自动检查</button>
-          </form>
-          <div id="bd-upload-status" class="text-sm mt-2"></div>
-          <div id="bd-upload-results" class="mt-3"></div>
-        </div>
-
-        <!-- 汇总 -->
-        <div class="mt-5 pt-4 border-t">
-          <h3 class="text-sm font-medium text-slate-700 mb-2">批次汇总</h3>
-          <div id="bd-summary" class="grid grid-cols-1 md:grid-cols-4 gap-3"></div>
-        </div>
-
-        <!-- 检查任务列表 -->
-        <div class="mt-5 pt-4 border-t">
-          <h3 class="text-sm font-medium text-slate-700 mb-2">检查任务</h3>
-          <table class="table">
-            <thead><tr><th>任务</th><th>文档</th><th>模板</th><th>状态</th><th>结果摘要</th></tr></thead>
-            <tbody id="bd-check-tbody"></tbody>
-          </table>
-        </div>
-
-        <!-- 联动校验列表 -->
-        <div class="mt-5 pt-4 border-t">
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-medium text-slate-700">联动校验</h3>
-            <button id="bd-retrigger" class="btn-secondary text-xs">重新触发联动</button>
-          </div>
-          <table class="table mt-2">
-            <thead><tr><th>任务</th><th>链路</th><th>状态</th><th>结果摘要</th></tr></thead>
-            <tbody id="bd-chain-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- ───────── 文档管理 ───────── -->
-    <section id="tab-documents" class="tab-panel hidden">
-      <div class="card mb-6">
-        <h2 class="card-title">上传文档</h2>
-        <form id="upload-form" class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="md:col-span-2">
-            <label class="form-label">文档文件</label>
-            <input type="file" name="file" required accept=".txt,.md,.docx,.pdf,.xlsx" class="form-input" />
-            <p class="text-xs text-slate-500 mt-1">支持 .txt / .md / .docx / .pdf / .xlsx</p>
-          </div>
-          <div>
-            <label class="form-label">一级分类</label>
-            <select name="category" class="form-input">
-              <option value="">— 选择 —</option>
-              <option>内部制度</option>
-              <option>合同</option>
-              <option>采购招标</option>
-              <option>内控报告</option>
-              <option>决算报告</option>
-              <option>财务报告</option>
-              <option>国有资产报告</option>
-              <option>绩效评价报告</option>
-              <option>其他佐证资料</option>
-            </select>
-          </div>
-          <div>
-            <label class="form-label">子类（采购招标用，可选）</label>
-            <select name="subcategory" class="form-input">
-              <option value="">—</option>
-              <option>招标</option>
-              <option>投标</option>
-              <option>评标</option>
-            </select>
-          </div>
-          <div>
-            <label class="form-label">项目编号</label>
-            <input name="project_id" class="form-input" placeholder="可选" />
-          </div>
-          <div>
-            <label class="form-label">年度</label>
-            <input name="year" class="form-input" placeholder="如 2026" />
-          </div>
-          <div class="md:col-span-2 flex items-center justify-end gap-2">
-            <span id="upload-status" class="text-sm text-slate-500"></span>
-            <button type="submit" class="btn-primary">上传</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="card">
-        <div class="flex items-center justify-between">
-          <h2 class="card-title">文档列表</h2>
-          <button id="refresh-docs" class="btn-secondary text-sm">刷新</button>
-        </div>
-        <div class="mt-3 overflow-x-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>ID</th><th>文件名</th><th>分类</th><th>子类</th>
-                <th>年度</th><th>上传时间</th>
-              </tr>
-            </thead>
-            <tbody id="docs-tbody"><tr><td colspan="6" class="text-center text-slate-400 py-6">加载中...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- ───────── 单文件检查 ───────── -->
-    <section id="tab-checks" class="tab-panel hidden">
-      <div class="card mb-6">
-        <h2 class="card-title">发起单文件检查</h2>
-        <form id="check-form" class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label class="form-label">选择文档</label>
-            <select id="check-doc" name="document_id" class="form-input" required></select>
-          </div>
-          <div>
-            <label class="form-label">选择模板</label>
-            <select id="check-template" name="template_key" class="form-input" required></select>
-          </div>
-          <div class="flex items-end">
-            <button type="submit" class="btn-primary w-full">开始检查</button>
-          </div>
-        </form>
-        <div id="check-status" class="text-sm text-slate-500 mt-3"></div>
-      </div>
-
-      <div id="check-result" class="card hidden">
-        <div class="flex items-start justify-between">
-          <div>
-            <h2 class="card-title" id="check-result-title">检查结果</h2>
-            <p id="check-result-summary" class="text-sm text-slate-600 mt-1"></p>
-          </div>
-          <div class="flex gap-2">
-            <a id="report-link" href="#" class="btn-secondary text-sm" target="_blank">下载 docx 报告</a>
-          </div>
-        </div>
-        <div class="mt-4 overflow-x-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                <th class="w-12">#</th>
-                <th>疑点描述</th>
-                <th>位置</th>
-                <th>风险</th>
-                <th>状态</th>
-                <th>整改建议</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="issues-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- 问题协同复核模态 -->
-    <div id="issue-modal" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-40 hidden">
-      <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-3xl p-6 max-h-[90vh] overflow-y-auto">
-        <div class="flex items-start justify-between">
-          <div>
-            <h2 class="card-title">问题协同复核</h2>
-            <div id="modal-issue-title" class="text-sm text-slate-600 mt-1"></div>
-          </div>
-          <button id="modal-close" class="btn-secondary text-sm">关闭</button>
-        </div>
-
-        <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div><span class="text-slate-500">规则</span>：<span id="m-rule" class="font-mono"></span></div>
-          <div><span class="text-slate-500">风险</span>：<span id="m-risk"></span></div>
-          <div><span class="text-slate-500">位置</span>：<span id="m-loc"></span></div>
-          <div><span class="text-slate-500">当前状态</span>：<span id="m-status" class="font-medium"></span></div>
-          <div class="md:col-span-2"><span class="text-slate-500">建议</span>：<span id="m-sugg"></span></div>
-          <div class="md:col-span-2" id="m-fix-note-box" style="display:none">
-            <div class="text-slate-500 text-xs">整改说明</div>
-            <div id="m-fix-note" class="mt-1 p-2 bg-slate-50 rounded border border-slate-200"></div>
-          </div>
-          <div class="md:col-span-2" id="m-review-note-box" style="display:none">
-            <div class="text-slate-500 text-xs">复核意见</div>
-            <div id="m-review-note" class="mt-1 p-2 bg-slate-50 rounded border border-slate-200"></div>
-          </div>
-        </div>
-
-        <!-- 工作流操作按钮组 -->
-        <div class="mt-4 pt-4 border-t" id="m-actions">
-          <h3 class="text-sm font-medium text-slate-700 mb-2">工作流操作</h3>
-          <div id="m-action-buttons" class="flex flex-wrap gap-2"></div>
-        </div>
-
-        <!-- 评论线程 -->
-        <div class="mt-5 pt-4 border-t">
-          <h3 class="text-sm font-medium text-slate-700 mb-2">在线批注</h3>
-          <div id="m-comments" class="space-y-2 mb-3 max-h-60 overflow-y-auto"></div>
-          <form id="m-comment-form" class="flex gap-2">
-            <input id="m-comment-body" placeholder="发表评论…" class="form-input flex-1" />
-            <button type="submit" class="btn-primary">发送</button>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    <!-- 工作流操作输入模态 -->
-    <div id="action-modal" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 hidden">
-      <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-md p-6">
-        <h2 class="card-title" id="am-title">操作</h2>
-        <div class="mt-3 space-y-3">
-          <div id="am-assignee-box" style="display:none">
-            <label class="form-label">指派给</label>
-            <select id="am-assignee" class="form-input"></select>
-          </div>
-          <div id="am-note-box" style="display:none">
-            <label class="form-label" id="am-note-label">说明</label>
-            <textarea id="am-note" rows="3" class="form-input"></textarea>
-          </div>
-          <div id="am-error" class="text-sm text-rose-600 hidden"></div>
-        </div>
-        <div class="mt-4 flex justify-end gap-2">
-          <button id="am-cancel" class="btn-secondary">取消</button>
-          <button id="am-confirm" class="btn-primary">确认</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ───────── 联动校验 ───────── -->
-    <section id="tab-chains" class="tab-panel hidden">
-      <div class="flex gap-2 mb-4">
-        <button class="chain-tab chain-active" data-chain="procurement">招采链</button>
-        <button class="chain-tab" data-chain="finance">财务链</button>
-        <button class="chain-tab" data-chain="report">报告链</button>
-      </div>
-
-      <div class="card mb-6">
-        <h2 class="card-title" id="chain-title">招采链联动校验</h2>
-        <p id="chain-desc" class="text-sm text-slate-600 mt-1">招标 → 投标 → 评标 → 合同 跨文件字段比对</p>
-        <form id="chain-form" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- 由 JS 动态填充 -->
-        </form>
-        <div class="flex items-center justify-end gap-2 mt-4">
-          <span id="chain-status" class="text-sm text-slate-500"></span>
-          <button id="chain-submit" class="btn-primary">开始联动校验</button>
-        </div>
-      </div>
-
-      <div id="chain-result" class="card hidden">
-        <h2 class="card-title">联动校验结果</h2>
-        <p id="chain-result-summary" class="text-sm text-slate-600 mt-1"></p>
         <details class="mt-3">
-          <summary class="cursor-pointer text-sm text-indigo-600 hover:underline">查看抽取字段</summary>
-          <pre id="extracted-fields" class="mt-2 bg-slate-100 p-3 rounded text-xs overflow-x-auto"></pre>
+          <summary class="text-sm text-indigo-600 cursor-pointer hover:underline">新建被检查单位</summary>
+          <form id="unit-create-form" class="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input name="name" placeholder="单位名称" class="form-input" required />
+            <input name="code" placeholder="编码（可选）" class="form-input" />
+            <select name="level" class="form-input"><option>单位</option><option>部门</option></select>
+            <button type="submit" class="btn-secondary">新建单位</button>
+          </form>
         </details>
-        <div class="mt-4 overflow-x-auto">
+      </div>
+
+      <div class="card mb-6">
+        <h2 class="card-title">任务列表</h2>
+        <div class="mt-3 overflow-x-auto">
           <table class="table">
-            <thead>
-              <tr>
-                <th class="w-12">#</th>
-                <th>跨文件疑点</th>
-                <th>涉及文件</th>
-                <th>风险</th>
-                <th>整改建议</th>
-              </tr>
-            </thead>
-            <tbody id="chain-issues-tbody"></tbody>
+            <thead><tr><th>ID</th><th>单位</th><th>任务名</th><th>年度</th><th>状态</th><th>结论摘要</th><th>操作</th></tr></thead>
+            <tbody id="tasks-tbody"><tr><td colspan="7" class="text-center text-slate-400 py-6">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 任务详情区 -->
+      <div id="task-detail" class="card hidden">
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 class="card-title" id="td-title"></h2>
+            <p id="td-meta" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+          <button id="td-close" class="btn-secondary text-sm">收起</button>
+        </div>
+
+        <div class="mt-4 pt-4 border-t">
+          <h3 class="text-sm font-medium text-slate-700 mb-2">上传佐证材料（必须绑定指标）</h3>
+          <form id="material-upload-form" class="flex items-center gap-2">
+            <select id="md-indicator-select" class="form-input flex-1" required>
+              <option value="">— 选择指标 —</option>
+            </select>
+            <input type="file" id="md-file" accept=".txt,.md,.docx,.pdf,.xlsx" required />
+            <button type="submit" class="btn-primary">上传</button>
+          </form>
+          <div id="md-upload-status" class="text-sm mt-2"></div>
+        </div>
+
+        <div class="mt-5 pt-4 border-t">
+          <h3 class="text-sm font-medium text-slate-700 mb-2">已上传材料</h3>
+          <table class="table">
+            <thead><tr><th>ID</th><th>文件名</th><th>绑定指标</th><th>key_elements</th></tr></thead>
+            <tbody id="td-materials-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="mt-5 pt-4 border-t flex items-center gap-3">
+          <button id="td-run" class="btn-primary">▶ 触发 AI 核查</button>
+          <button id="td-finalize" class="btn-secondary">✓ 复核完成，定稿</button>
+          <span id="td-run-status" class="text-sm text-slate-500"></span>
+        </div>
+
+        <div class="mt-5 pt-4 border-t">
+          <h3 class="text-sm font-medium text-slate-700 mb-2">核查发现（Finding）</h3>
+          <div id="td-summary" class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3"></div>
+          <table class="table">
+            <thead><tr><th class="w-10">#</th><th>类型</th><th>风险</th><th>问题描述</th><th>建议</th><th>复核</th><th>整改</th></tr></thead>
+            <tbody id="td-findings-tbody"></tbody>
           </table>
         </div>
       </div>
     </section>
-    <!-- ───────── 系统管理（仅管理员可见）───────── -->
+
+    <!-- ───────── 知识库 ───────── -->
+    <section id="tab-knowledge" class="tab-panel hidden">
+      <div class="flex gap-2 mb-4">
+        <button class="kb-tab kb-active" data-kb="indicators">评价指标库</button>
+        <button class="kb-tab" data-kb="check-items">问题清单库</button>
+      </div>
+
+      <div id="kb-indicators" class="kb-panel">
+        <div class="card mb-4">
+          <div class="flex items-center justify-between">
+            <h2 class="card-title">评价指标库</h2>
+            <label class="btn-secondary text-sm cursor-pointer">
+              批量导入 JSON
+              <input id="import-indicators-file" type="file" accept=".json" hidden />
+            </label>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">编报指南附件 1/2 中的评价指标，AI 的判断基准。</p>
+          <div class="mt-3 overflow-x-auto">
+            <table class="table">
+              <thead><tr><th>编号</th><th>层级</th><th>分类</th><th>名称</th><th>满分</th><th>必需材料</th></tr></thead>
+              <tbody id="indicators-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="kb-check-items" class="kb-panel hidden">
+        <div class="card mb-4">
+          <div class="flex items-center justify-between">
+            <h2 class="card-title">问题清单库</h2>
+            <label class="btn-secondary text-sm cursor-pointer">
+              批量导入 JSON
+              <input id="import-items-file" type="file" accept=".json" hidden />
+            </label>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">客户提供的真实性+相关性核查清单，AI 的「考题」。</p>
+          <div class="mt-3 overflow-x-auto">
+            <table class="table">
+              <thead><tr><th>编号</th><th>维度</th><th>子类</th><th>描述</th><th>方法</th><th>风险</th></tr></thead>
+              <tbody id="items-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────── 系统管理 ───────── -->
     <section id="tab-admin" class="tab-panel hidden">
       <div class="card mb-6">
         <h2 class="card-title">用户管理</h2>
@@ -394,13 +218,13 @@
           <input name="password" type="password" placeholder="初始密码" class="form-input" required />
           <select name="role" class="form-input" required>
             <option value="">— 角色 —</option>
-            <option value="admin">管理员</option>
-            <option value="procurement">招采专员</option>
-            <option value="finance">财务专员</option>
-            <option value="internal_control">内控专员</option>
+            <option value="super_admin">超级管理员</option>
+            <option value="auditor">审查员</option>
+            <option value="unit">被检查单位</option>
+            <option value="readonly">只读用户</option>
           </select>
           <input name="full_name" placeholder="姓名（可选）" class="form-input" />
-          <button type="submit" class="btn-primary">创建用户</button>
+          <button type="submit" class="btn-primary">创建</button>
         </form>
         <div id="user-form-status" class="text-sm mt-2"></div>
         <div class="mt-4 overflow-x-auto">
@@ -424,7 +248,82 @@
         </div>
       </div>
     </section>
+
+    <!-- ───────── 系统设置（LLM Key）───────── -->
+    <section id="tab-settings" class="tab-panel hidden">
+      <div class="card max-w-2xl">
+        <h2 class="card-title">LLM 配置</h2>
+        <p class="text-xs text-slate-500 mt-1">
+          配置 DeepSeek V4 Pro API Key 后立即生效，无需重启。
+          后端只存储 key，前端不回显明文。
+        </p>
+        <form id="llm-form" class="mt-4 space-y-3">
+          <div>
+            <label class="form-label">服务商</label>
+            <select name="provider" class="form-input">
+              <option value="deepseek">DeepSeek V4 Pro（推荐）</option>
+              <option value="claude">Claude（备选）</option>
+              <option value="stub">Stub（离线兜底，不调 LLM）</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">模型</label>
+            <input name="model" class="form-input" placeholder="deepseek-v4-pro" />
+          </div>
+          <div>
+            <label class="form-label">Base URL</label>
+            <input name="base_url" class="form-input" placeholder="https://api.deepseek.com/v1" />
+          </div>
+          <div>
+            <label class="form-label">API Key</label>
+            <input name="api_key" type="password" class="form-input" placeholder="sk-..." />
+            <p id="llm-key-hint" class="text-xs text-slate-500 mt-1"></p>
+          </div>
+          <div>
+            <label class="form-label">推理模式（DeepSeek）</label>
+            <select name="thinking_mode" class="form-input">
+              <option value="non_think">Non-think（快速响应，相关性核查）</option>
+              <option value="think_high">Think High（逻辑分析，复杂判断）</option>
+              <option value="think_max">Think Max（最大推理预算）</option>
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <button type="submit" class="btn-primary">保存配置</button>
+            <button type="button" id="llm-test-btn" class="btn-secondary">测试连接</button>
+          </div>
+          <div id="llm-status" class="text-sm"></div>
+        </form>
+      </div>
+    </section>
   </main>
+
+  <!-- Finding 复核/整改模态 -->
+  <div id="finding-modal" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-40 hidden">
+    <div class="bg-white rounded-lg shadow-xl border border-slate-200 w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-start justify-between">
+        <h2 class="card-title" id="fm-title">问题详情</h2>
+        <button id="fm-close" class="btn-secondary text-sm">关闭</button>
+      </div>
+      <div class="mt-4 space-y-2 text-sm" id="fm-body"></div>
+      <div class="mt-5 pt-4 border-t space-y-3">
+        <h3 class="text-sm font-medium">审查员复核（confirmed / ignored / adjusted）</h3>
+        <textarea id="fm-review-note" rows="2" class="form-input" placeholder="复核意见"></textarea>
+        <div class="flex gap-2">
+          <button class="btn-secondary fm-review-btn" data-status="confirmed" style="background:#dcfce7;color:#166534">确认</button>
+          <button class="btn-secondary fm-review-btn" data-status="ignored">忽略</button>
+          <button class="btn-secondary fm-review-btn" data-status="adjusted">调整</button>
+        </div>
+      </div>
+      <div class="mt-5 pt-4 border-t space-y-3">
+        <h3 class="text-sm font-medium">整改闭环</h3>
+        <textarea id="fm-rectify-note" rows="2" class="form-input" placeholder="整改说明"></textarea>
+        <div class="flex gap-2">
+          <button id="fm-rectify-btn" class="btn-secondary">提交整改</button>
+          <button id="fm-resolve-btn" class="btn-primary" style="background:#059669">销号</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <footer class="text-center text-xs text-slate-400 py-6">
     辅助审查工具 · 最终结论须经人工复核 · 全程留痕可溯源
