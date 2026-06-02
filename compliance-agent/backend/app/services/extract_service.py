@@ -204,6 +204,129 @@ def extract_indicators(db: Session, file_name: str, content: bytes,
     return items, f"正则启发式抽取（共 {len(items)} 条，建议配置 LLM API Key 获得更准结果）"
 
 
+# ============================================================
+# 法规文件智能分类（用于批量上传时自动归类）
+# ============================================================
+CLASSIFY_SYSTEM_PROMPT = (
+    "你是行政事业单位审计领域的法规分类助手。"
+    "我会给你一份法规文件的文件名和头部正文，你的任务是判断它的："
+    "1) 文档类型（doc_type）；2) 适用地区（region）；3) 标题、发文机关、文号。\n"
+    "严格规则：\n"
+    "- doc_type 只能从这 7 个值选一个：上位法 / 评价办法 / 编报指南 / 地方法规 / 部门规章 / 高频问题 / 其它\n"
+    "- region 只能从这 6 个值选一个：国家 / 省 / 市 / 区县 / 部门 / 其它\n"
+    "- 含「中华人民共和国法律」「财政部」全国性法律为「上位法/国家」\n"
+    "- 含「评价办法」「评价细则」「评价规程」为「评价办法」\n"
+    "- 含「编报指南」「附件 1」「附件 2」「指标体系」为「编报指南」\n"
+    "- 含省/市/县名称 + 财政厅/局/局发文为「地方法规」，region 对应到省/市/区县\n"
+    "- 部门内部管理办法为「部门规章/部门」\n"
+    "- 不确定时填 其它/其它，confidence=低\n"
+    "- 仅输出 JSON，不要任何额外文字。"
+)
+
+
+CLASSIFY_USER_TMPL = """文件名：{file_name}
+
+文档头部正文（前 800 字）：
+{head}
+
+请输出 JSON：
+{{
+  "doc_type": "...",
+  "region": "...",
+  "title": "...（智能识别的法规标题，如「行政事业单位内部控制规范（试行）」）",
+  "issuer": "...（发文机关，如无则填空）",
+  "doc_number": "...（发文文号，如「财办〔2012〕63号」，如无则填空）",
+  "effective_date": "...（生效日期 YYYY-MM-DD，如无则填空）",
+  "confidence": "高|中|低"
+}}
+"""
+
+
+def classify_regulation(db: Session, file_name: str, content: bytes) -> dict:
+    """智能识别一份法规文件的分类。失败时返回保守默认值。"""
+    default = {
+        "doc_type": "其它", "region": "国家",
+        "title": file_name.rsplit(".", 1)[0],
+        "issuer": "", "doc_number": "", "effective_date": "",
+        "confidence": "低",
+    }
+
+    try:
+        text = _parse_to_text(file_name, content)
+    except UnsupportedFormatError:
+        return {**default, "confidence": "低"}
+
+    if not text.strip():
+        return default
+
+    head = text[:800]
+
+    llm = get_llm_client(db)
+    if not isinstance(llm, StubLLMClient):
+        try:
+            prompt = CLASSIFY_USER_TMPL.format(file_name=file_name, head=head)
+            data = llm.extract_json(prompt, system=CLASSIFY_SYSTEM_PROMPT, max_tokens=1000)
+            if isinstance(data, dict):
+                # 规范化字段，缺失补默认
+                result = {**default, **{k: str(v) for k, v in data.items() if v is not None}}
+                # 校验枚举值
+                if result["doc_type"] not in [
+                    "上位法", "评价办法", "编报指南", "地方法规",
+                    "部门规章", "高频问题", "其它"
+                ]:
+                    result["doc_type"] = "其它"
+                if result["region"] not in [
+                    "国家", "省", "市", "区县", "部门", "其它"
+                ]:
+                    result["region"] = "国家"
+                return result
+        except Exception as exc:
+            print(f"[classify] LLM 分类失败：{exc}")
+
+    # 兜底：用文件名关键词启发式判断
+    return _classify_heuristic(file_name, head)
+
+
+def _classify_heuristic(file_name: str, head: str) -> dict:
+    """LLM 不可用时的启发式分类。"""
+    text = (file_name + " " + head).lower()
+    doc_type = "其它"
+    region = "国家"
+
+    if any(k in text for k in ["编报指南", "附件 1", "附件 2", "附件1", "附件2", "指标体系"]):
+        doc_type = "编报指南"
+    elif any(k in text for k in ["评价办法", "评价细则", "评价规程"]):
+        doc_type = "评价办法"
+    elif any(k in text for k in ["中华人民共和国", "全国人大", "国务院"]):
+        doc_type = "上位法"
+    elif any(k in text for k in ["省财政厅", "市财政局", "省政府", "市政府", "县政府"]):
+        doc_type = "地方法规"
+        for r in ["省", "市", "区县"]:
+            if r in text:
+                region = r
+                break
+    elif "管理办法" in text or "实施细则" in text:
+        doc_type = "部门规章"
+        region = "部门"
+
+    # 抓文号
+    import re as _re
+    doc_num = ""
+    m = _re.search(r"([一-龥A-Za-z]{1,15}\s*[〔\[【（]\s*\d{4}\s*[〕\]】）]\s*第?\s*\d+\s*号)", text)
+    if m:
+        doc_num = m.group(1)
+
+    return {
+        "doc_type": doc_type,
+        "region": region,
+        "title": file_name.rsplit(".", 1)[0],
+        "issuer": "",
+        "doc_number": doc_num,
+        "effective_date": "",
+        "confidence": "中" if doc_type != "其它" else "低",
+    }
+
+
 def extract_check_items(db: Session, file_name: str, content: bytes,
                         max_chars: int = 12000) -> tuple[list[dict], str]:
     text = _parse_to_text(file_name, content)

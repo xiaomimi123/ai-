@@ -885,6 +885,338 @@ function bindRegFilters() {
 bindRegFilters();
 
 // 上传弹窗
+// ============================================================
+// 文件夹批量上传（功能 4）
+// ============================================================
+const FOLDER_STATE = {
+  files: [],
+  strategy: "ai",
+  cancelled: false,
+};
+const FOLDER_MAX_FILES = 200;
+const FOLDER_MAX_SIZE_MB = 50;
+const FOLDER_CONCURRENCY = 3;
+const SUPPORTED_FOLDER_EXTS = [".pdf", ".docx", ".xlsx", ".txt", ".md"];
+const PATH_FOLDER_DOC_TYPES = ["上位法", "评价办法", "编报指南", "地方法规",
+                                "部门规章", "高频问题"];
+
+document.getElementById("open-folder-upload").addEventListener("click", () => {
+  document.getElementById("folder-picker").click();
+});
+
+document.getElementById("folder-picker").addEventListener("change", ev => {
+  const all = Array.from(ev.target.files || []);
+  ev.target.value = "";  // 允许再次选择同一文件夹
+  if (!all.length) return;
+
+  // 按扩展名过滤
+  const valid = all.filter(f => {
+    const name = (f.name || "").toLowerCase();
+    return SUPPORTED_FOLDER_EXTS.some(ext => name.endsWith(ext));
+  });
+
+  if (!valid.length) {
+    toast("文件夹内未找到任何支持的文件（PDF/Word/Excel/TXT/MD）", "error");
+    return;
+  }
+  if (valid.length > FOLDER_MAX_FILES) {
+    toast(`文件数 ${valid.length} 超过 ${FOLDER_MAX_FILES} 上限，请分批上传`, "error");
+    return;
+  }
+  const tooBig = valid.filter(f => f.size > FOLDER_MAX_SIZE_MB * 1024 * 1024);
+  if (tooBig.length) {
+    toast(`${tooBig.length} 份文件超过 ${FOLDER_MAX_SIZE_MB}MB，请检查`, "error");
+    return;
+  }
+
+  FOLDER_STATE.files = valid;
+  FOLDER_STATE.cancelled = false;
+  openFolderConfigModal();
+});
+
+function openFolderConfigModal() {
+  document.getElementById("fc-count").textContent = FOLDER_STATE.files.length;
+  document.getElementById("folder-config-modal").classList.remove("hidden");
+  document.getElementById("fc-error").classList.add("hidden");
+  document.getElementById("fc-strategy").value = "ai";
+  updateFcStrategyUI("ai");
+}
+
+document.getElementById("fc-strategy").addEventListener("change", ev => {
+  updateFcStrategyUI(ev.target.value);
+});
+
+function updateFcStrategyUI(s) {
+  document.getElementById("fc-strategy-ai").classList.toggle("hidden", s !== "ai");
+  document.getElementById("fc-strategy-uniform").classList.toggle("hidden", s !== "uniform");
+  document.getElementById("fc-strategy-path").classList.toggle("hidden", s !== "path");
+  if (s === "path") renderPathPreview();
+}
+
+function fileRelativePath(f) {
+  // 浏览器把目录相对路径放在 webkitRelativePath（如 "上位法/财办63号.pdf"）
+  return f.webkitRelativePath || f.name;
+}
+
+function renderPathPreview() {
+  // 按一级目录分组预览
+  const groups = {};
+  FOLDER_STATE.files.forEach(f => {
+    const rel = fileRelativePath(f);
+    const parts = rel.split("/");
+    // parts[0] 是用户选的根目录名；parts[1] 是真正的一级子目录（如 "上位法"）
+    const subDir = parts.length >= 3 ? parts[1] : "(根目录)";
+    groups[subDir] = (groups[subDir] || 0) + 1;
+  });
+  const box = document.getElementById("fc-path-preview");
+  box.innerHTML = Object.entries(groups)
+    .map(([dir, n]) => {
+      const matched = PATH_FOLDER_DOC_TYPES.includes(dir);
+      const cls = matched ? "color:var(--green)" : "color:var(--orange)";
+      const label = matched ? `→ ${dir}` : `→ 其它（未匹配）`;
+      return `<div style="${cls}">· <b>${esc(dir)}/</b> (${n} 份) <span style="opacity:0.7">${label}</span></div>`;
+    }).join("");
+}
+
+document.getElementById("fc-start").addEventListener("click", async () => {
+  const strategy = document.getElementById("fc-strategy").value;
+  FOLDER_STATE.strategy = strategy;
+
+  // AI 策略需要 API Key
+  if (strategy === "ai") {
+    try {
+      const cfg = await api("/settings/llm");
+      if (!cfg.has_api_key) {
+        document.getElementById("fc-error").textContent =
+          "AI 策略需要先在「后台管理 → 大语言模型」配置 API Key，请改选「统一应用」或「按路径」";
+        document.getElementById("fc-error").classList.remove("hidden");
+        return;
+      }
+    } catch (e) {
+      document.getElementById("fc-error").textContent = "无法读取 LLM 配置：" + e.message;
+      document.getElementById("fc-error").classList.remove("hidden");
+      return;
+    }
+  }
+
+  document.getElementById("folder-config-modal").classList.add("hidden");
+  await runFolderUpload();
+});
+
+// ============================================================
+// 主上传循环
+// ============================================================
+async function runFolderUpload() {
+  const files = FOLDER_STATE.files;
+  const strategy = FOLDER_STATE.strategy;
+  FOLDER_STATE.cancelled = false;
+
+  // 准备进度模态
+  const tbody = document.getElementById("fp-tbody");
+  document.getElementById("fp-close").classList.add("hidden");
+  document.getElementById("fp-cancel").classList.remove("hidden");
+  document.getElementById("fp-summary").textContent =
+    `共 ${files.length} 份文件，使用「${strategyLabel(strategy)}」策略`;
+  document.getElementById("fp-bar").style.width = "0%";
+
+  tbody.innerHTML = files.map((f, idx) => `
+    <tr id="fp-row-${idx}">
+      <td><span id="fp-icon-${idx}" class="text-muted">○</span></td>
+      <td style="word-break:break-all">${esc(fileRelativePath(f))}</td>
+      <td id="fp-doctype-${idx}" class="text-faint">—</td>
+      <td id="fp-region-${idx}" class="text-faint">—</td>
+      <td id="fp-chunks-${idx}" class="text-faint">—</td>
+      <td id="fp-msg-${idx}" class="text-sm text-muted">待上传</td>
+    </tr>`).join("");
+
+  document.getElementById("folder-progress-modal").classList.remove("hidden");
+
+  // 并发控制
+  let cursor = 0;
+  let done = 0;
+  let succeeded = 0;
+  let failed = 0;
+
+  const updateBar = () => {
+    document.getElementById("fp-bar").style.width = `${(done / files.length) * 100}%`;
+    document.getElementById("fp-summary").textContent =
+      `进度 ${done}/${files.length} · 成功 ${succeeded} · 失败 ${failed}`;
+  };
+
+  async function worker() {
+    while (true) {
+      if (FOLDER_STATE.cancelled) break;
+      const idx = cursor++;
+      if (idx >= files.length) break;
+      const file = files[idx];
+      await processOne(file, idx, strategy)
+        .then(() => { succeeded++; })
+        .catch(() => { failed++; });
+      done++;
+      updateBar();
+    }
+  }
+
+  const workers = Array.from({ length: FOLDER_CONCURRENCY }, () => worker());
+  await Promise.all(workers);
+
+  // 完成
+  document.getElementById("fp-cancel").classList.add("hidden");
+  document.getElementById("fp-close").classList.remove("hidden");
+  if (FOLDER_STATE.cancelled) {
+    document.getElementById("fp-summary").textContent =
+      `已取消 · 完成 ${done}/${files.length} · 成功 ${succeeded} · 失败 ${failed}`;
+    toast(`已取消上传（已完成 ${done}）`, "info");
+  } else {
+    toast(`✓ 完成：成功 ${succeeded}，失败 ${failed}`, succeeded > 0 ? "success" : "error");
+  }
+  // 刷新法规库列表
+  loadRegulations();
+}
+
+function strategyLabel(s) {
+  return { ai: "AI 智能识别", uniform: "统一应用", path: "按路径" }[s] || s;
+}
+
+document.getElementById("fp-cancel").addEventListener("click", () => {
+  FOLDER_STATE.cancelled = true;
+  document.getElementById("fp-cancel").disabled = true;
+});
+
+// ============================================================
+// 单文件处理：决策分类 → POST 上传
+// ============================================================
+async function processOne(file, idx, strategy) {
+  setRowState(idx, "wait", "正在处理…");
+  let meta;
+  try {
+    meta = await decideClassification(file, strategy);
+  } catch (e) {
+    setRowState(idx, "fail", "分类失败：" + e.message);
+    return Promise.reject(e);
+  }
+
+  setRowDoc(idx, meta);
+  setRowState(idx, "wait", "上传中…");
+
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("title", meta.title);
+    fd.append("doc_type", meta.doc_type);
+    fd.append("region", meta.region);
+    fd.append("issuer", meta.issuer || "");
+    fd.append("doc_number", meta.doc_number || "");
+    fd.append("effective_date", meta.effective_date || "");
+    fd.append("description", `批量上传 · 策略：${strategyLabel(strategy)}`);
+    fd.append("tags", "[]");
+
+    const tok = getToken();
+    const r = await fetch(`${API}/regulations`, {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + tok },
+      body: fd,
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      let msg = text;
+      try { msg = JSON.parse(text).detail || text; } catch {}
+      throw new Error(msg || `HTTP ${r.status}`);
+    }
+    const reg = await r.json();
+    setRowChunks(idx, reg.chunks_count);
+    setRowState(idx, "ok", `✓ 已上传`);
+    return reg;
+  } catch (e) {
+    setRowState(idx, "fail", "✗ " + e.message);
+    throw e;
+  }
+}
+
+async function decideClassification(file, strategy) {
+  if (strategy === "uniform") {
+    return {
+      title: stripExt(file.name),
+      doc_type: document.getElementById("fc-default-doc-type").value,
+      region: document.getElementById("fc-default-region").value,
+    };
+  }
+
+  if (strategy === "path") {
+    const parts = fileRelativePath(file).split("/");
+    const subDir = parts.length >= 3 ? parts[1] : "";
+    const doc_type = PATH_FOLDER_DOC_TYPES.includes(subDir) ? subDir : "其它";
+    // 简单按文件夹名推断 region
+    let region = "国家";
+    if (doc_type === "地方法规") region = "省";
+    if (doc_type === "部门规章") region = "部门";
+    return {
+      title: stripExt(file.name),
+      doc_type,
+      region,
+    };
+  }
+
+  // ai 策略：调 /classify 端点
+  const fd = new FormData();
+  fd.append("file", file);
+  const tok = getToken();
+  const r = await fetch(`${API}/regulations/classify`, {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + tok },
+    body: fd,
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    let msg = text;
+    try { msg = JSON.parse(text).detail || text; } catch {}
+    throw new Error(msg);
+  }
+  return await r.json();
+}
+
+function stripExt(name) {
+  const i = name.lastIndexOf(".");
+  return i > 0 ? name.slice(0, i) : name;
+}
+
+function setRowState(idx, state, msg) {
+  const icon = document.getElementById(`fp-icon-${idx}`);
+  const m = document.getElementById(`fp-msg-${idx}`);
+  if (icon) {
+    const iconMap = {
+      wait: '<span style="color:var(--orange)">⋯</span>',
+      ok:   '<span style="color:var(--green)">✓</span>',
+      fail: '<span style="color:var(--red)">✗</span>',
+    };
+    icon.innerHTML = iconMap[state] || "○";
+  }
+  if (m) {
+    m.textContent = msg;
+    m.className = "text-sm " + (state === "fail" ? "" : "text-muted");
+    if (state === "fail") m.style.color = "var(--red)";
+  }
+}
+
+function setRowDoc(idx, meta) {
+  const dt = document.getElementById(`fp-doctype-${idx}`);
+  const rg = document.getElementById(`fp-region-${idx}`);
+  if (dt) {
+    dt.innerHTML = docTypeBadge(meta.doc_type);
+  }
+  if (rg) {
+    rg.innerHTML = `<span class="badge badge-gray">${esc(meta.region)}</span>`;
+  }
+}
+
+function setRowChunks(idx, n) {
+  const c = document.getElementById(`fp-chunks-${idx}`);
+  if (c) c.innerHTML = `<span class="badge badge-green">${n}</span>`;
+}
+
+// ============================================================
+// 原有单文件上传按钮
+// ============================================================
 document.getElementById("open-reg-upload").addEventListener("click", () => {
   document.getElementById("reg-upload-modal").classList.remove("hidden");
   document.getElementById("reg-upload-error").classList.add("hidden");

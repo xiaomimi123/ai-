@@ -16,7 +16,7 @@ from app.api.schemas import RegulationListResponse, RegulationOut
 from app.core.auth import get_current_user, require_admin
 from app.models import Regulation, User, get_db
 from app.parsers.dispatcher import UnsupportedFormatError
-from app.services import regulation_service
+from app.services import extract_service, regulation_service
 from app.services.regulation_service import DOC_TYPES, REGIONS
 
 regulations_router = APIRouter(prefix="/api/regulations", tags=["knowledge:regulations"])
@@ -130,3 +130,23 @@ def delete_regulation(
 ):
     regulation_service.delete_regulation(db, reg_id, admin)
     return {"status": "ok"}
+
+
+@regulations_router.post("/classify", response_model=dict)
+async def classify_regulation_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """智能识别一份法规文件的分类（不入库）。
+
+    供文件夹批量上传时前端用于预判分类，让用户在上传前看到 AI 的分类建议。
+    """
+    try:
+        content = await file.read()
+        result = extract_service.classify_regulation(
+            db, file.filename or "untitled", content,
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(500, f"分类失败：{exc}")

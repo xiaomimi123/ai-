@@ -363,7 +363,10 @@
             <h1 class="page-title">法规库</h1>
             <p class="page-sub">上位法、评价办法、编报指南、地方法规等，AI 判断的法律依据来源。</p>
           </div>
-          <button class="btn btn-primary" id="open-reg-upload">+ 上传法规</button>
+          <div class="action-bar">
+            <button class="btn btn-secondary" id="open-folder-upload">📁 文件夹批量上传</button>
+            <button class="btn btn-primary" id="open-reg-upload">+ 上传法规</button>
+          </div>
         </div>
       </header>
       <div class="page-body">
@@ -797,6 +800,111 @@
     </form>
   </div>
 </div>
+
+<!-- 文件夹批量上传 · 配置弹窗 -->
+<div id="folder-config-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title">文件夹批量上传 · 分类策略</div>
+    <div class="modal-sub">选择如何为文件夹内 <b id="fc-count">0</b> 份文件分配分类（文档类型 + 地区）。</div>
+
+    <div class="form-group">
+      <label class="form-label">分类策略</label>
+      <select id="fc-strategy" class="form-select">
+        <option value="ai">🤖 AI 智能识别（推荐）— DeepSeek 逐份判断</option>
+        <option value="uniform">📌 统一应用 — 全部文件套用相同分类</option>
+        <option value="path">📂 按子文件夹路径 — 一级目录名作为文档类型</option>
+      </select>
+    </div>
+
+    <!-- AI 策略 -->
+    <div id="fc-strategy-ai" class="callout callout-info" style="font-size:13px">
+      系统会依次解析每份文件的标题 + 头部 800 字 → 调用 DeepSeek 智能判断。
+      <br/>每份约 1-2 秒，文件数较多时请耐心等待。
+      <br/>⚠️ 需要在「后台管理 → 大语言模型」配置 API Key。
+    </div>
+
+    <!-- 统一应用策略 -->
+    <div id="fc-strategy-uniform" class="hidden">
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">默认文档类型</label>
+          <select id="fc-default-doc-type" class="form-select">
+            <option value="上位法">上位法</option>
+            <option value="评价办法">评价办法</option>
+            <option value="编报指南">编报指南</option>
+            <option value="地方法规">地方法规</option>
+            <option value="部门规章">部门规章</option>
+            <option value="高频问题">高频问题</option>
+            <option value="其它" selected>其它</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">默认地区</label>
+          <select id="fc-default-region" class="form-select">
+            <option value="国家" selected>国家</option>
+            <option value="省">省级</option>
+            <option value="市">市级</option>
+            <option value="区县">区县</option>
+            <option value="部门">部门</option>
+            <option value="其它">其它</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 路径策略 -->
+    <div id="fc-strategy-path" class="hidden">
+      <div class="callout callout-info" style="font-size:13px">
+        将一级子文件夹名作为文档类型，文件名作为标题。<br/>
+        支持的文件夹名（自动归类）：<b>上位法 / 评价办法 / 编报指南 / 地方法规 / 部门规章 / 高频问题</b>。<br/>
+        其它一律归为「其它/国家」。
+      </div>
+      <div id="fc-path-preview" class="text-sm mt-3" style="max-height:160px;overflow:auto;padding:8px 12px;background:var(--bg);border-radius:6px;font-family:var(--font-mono)"></div>
+    </div>
+
+    <div id="fc-error" class="callout callout-error hidden mt-3"></div>
+    <div class="action-bar mt-4">
+      <button id="fc-start" class="btn btn-primary">开始上传</button>
+      <button class="btn btn-ghost" data-close-modal="#folder-config-modal">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 文件夹批量上传 · 进度弹窗 -->
+<div id="folder-progress-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:760px;max-height:88vh;display:flex;flex-direction:column">
+    <div class="modal-title">批量上传进度</div>
+    <div class="modal-sub" id="fp-summary">准备中…</div>
+
+    <div style="background:var(--bg);border-radius:8px;height:8px;overflow:hidden;margin:8px 0 16px">
+      <div id="fp-bar" style="height:100%;background:var(--blue);width:0%;transition:width 0.3s"></div>
+    </div>
+
+    <div style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:8px">
+      <table class="table" style="font-size:12px">
+        <thead>
+          <tr>
+            <th style="width:32px"></th>
+            <th>文件</th>
+            <th style="width:120px">识别分类</th>
+            <th style="width:80px">地区</th>
+            <th style="width:60px">索引</th>
+            <th>消息</th>
+          </tr>
+        </thead>
+        <tbody id="fp-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="action-bar mt-3">
+      <button id="fp-cancel" class="btn btn-ghost">取消剩余</button>
+      <button id="fp-close" class="btn btn-secondary hidden" data-close-modal="#folder-progress-modal">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 隐藏的目录文件 input —— webkitdirectory 触发文件夹选择 -->
+<input type="file" id="folder-picker" webkitdirectory directory multiple hidden />
 
 <!-- 导入预览模态（评价指标 / 问题清单 通用）-->
 <div id="import-preview-modal" class="modal-overlay hidden">
