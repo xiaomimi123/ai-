@@ -407,8 +407,8 @@
             <p class="page-sub">编报指南附件 1/2 中的评价指标，AI 判断的基准。</p>
           </div>
           <label class="btn btn-secondary">
-            ⇪ 批量导入 JSON
-            <input type="file" id="import-indicators" accept=".json" hidden />
+            ⇪ 批量导入（JSON / PDF / Word / Excel）
+            <input type="file" id="import-indicators" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
           </label>
         </div>
       </header>
@@ -449,8 +449,8 @@
             <p class="page-sub">客户提供的真实性 + 相关性核查清单，AI 的「考题」。</p>
           </div>
           <label class="btn btn-secondary">
-            ⇪ 批量导入 JSON
-            <input type="file" id="import-items" accept=".json" hidden />
+            ⇪ 批量导入（JSON / PDF / Word / Excel）
+            <input type="file" id="import-items" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
           </label>
         </div>
       </header>
@@ -794,6 +794,34 @@
         <button type="button" class="btn btn-ghost" data-close-modal="#reg-upload-modal">取消</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- 导入预览模态（评价指标 / 问题清单 通用）-->
+<div id="import-preview-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:920px;max-height:90vh;display:flex;flex-direction:column">
+    <div class="modal-title" id="ipm-title">导入预览</div>
+    <div class="modal-sub" id="ipm-sub"></div>
+
+    <div id="ipm-note" class="callout callout-info mb-3" style="font-size:13px"></div>
+
+    <div style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:8px">
+      <table class="table">
+        <thead id="ipm-thead"></thead>
+        <tbody id="ipm-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-warn mt-3" style="font-size:12px">
+      ⓘ 此处显示前 50 条预览。确认无误后点「确认导入」会处理全部条目。
+      重复编号将被自动跳过。
+    </div>
+
+    <div id="ipm-status" class="text-sm mt-3"></div>
+    <div class="action-bar mt-3">
+      <button id="ipm-confirm" class="btn btn-primary">确认导入</button>
+      <button class="btn btn-ghost" data-close-modal="#import-preview-modal">取消</button>
+    </div>
   </div>
 </div>
 

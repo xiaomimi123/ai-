@@ -1099,21 +1099,165 @@ async function uploadJson(endpoint, file) {
   return r.json();
 }
 
-document.getElementById("import-indicators").addEventListener("change", async ev => {
-  const file = ev.target.files[0]; if (!file) return;
+// ============================================================
+// 批量导入（PDF / Word / Excel / JSON）+ 预览确认流程
+// ============================================================
+
+let _importState = {
+  kind: null,        // "indicators" | "check-items"
+  file: null,
+  preview: [],
+  total: 0,
+};
+
+const IMPORT_COLUMNS = {
+  "indicators": [
+    { key: "indicator_code", label: "指标编号", w: 90 },
+    { key: "level", label: "层级", w: 60 },
+    { key: "category", label: "分类", w: 110 },
+    { key: "name", label: "名称" },
+    { key: "max_score", label: "满分", w: 60 },
+    { key: "required_materials", label: "必需材料", w: 180, fmt: tryJsonList },
+  ],
+  "check-items": [
+    { key: "item_code", label: "编号", w: 90 },
+    { key: "dimension", label: "维度", w: 120 },
+    { key: "subcategory", label: "子类", w: 100 },
+    { key: "description", label: "描述" },
+    { key: "check_method", label: "方法", w: 70 },
+    { key: "risk_level", label: "风险", w: 60 },
+  ],
+};
+
+function tryJsonList(v) {
   try {
-    const r = await uploadJson("/indicators/import", file);
-    toast(`✓ 创建 ${r.created}，跳过 ${r.skipped}`, "success");
-    loadIndicators();
-  } catch (e) { toast(e.message, "error"); }
-});
-document.getElementById("import-items").addEventListener("change", async ev => {
-  const file = ev.target.files[0]; if (!file) return;
+    const arr = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(arr) ? arr.join("、") : String(v);
+  } catch { return String(v); }
+}
+
+async function importDryRun(kind, file) {
+  const endpoint = kind === "indicators"
+    ? "/indicators/import-from-file?dry_run=true"
+    : "/check-items/import-from-file?dry_run=true";
+  const fd = new FormData(); fd.append("file", file);
+  const tok = getToken();
+  const r = await fetch(API + endpoint, {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + tok },
+    body: fd,
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    let msg = text;
+    try { msg = JSON.parse(text).detail || text; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+async function importConfirm(kind, file) {
+  const endpoint = kind === "indicators"
+    ? "/indicators/import-from-file?dry_run=false"
+    : "/check-items/import-from-file?dry_run=false";
+  const fd = new FormData(); fd.append("file", file);
+  const tok = getToken();
+  const r = await fetch(API + endpoint, {
+    method: "POST",
+    headers: { "Authorization": "Bearer " + tok },
+    body: fd,
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    let msg = text;
+    try { msg = JSON.parse(text).detail || text; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+function openImportPreview(kind, file, resp) {
+  _importState = { kind, file, preview: resp.preview || [], total: resp.total || resp.preview.length };
+
+  const labels = {
+    "indicators":  { title: "评价指标 — 导入预览", page: "评价指标" },
+    "check-items": { title: "问题清单 — 导入预览", page: "问题清单" },
+  };
+  document.getElementById("ipm-title").textContent = labels[kind].title;
+  document.getElementById("ipm-sub").textContent =
+    `文件：${file.name} · 抽取条目：${_importState.total}（预览前 ${_importState.preview.length} 条）`;
+
+  document.getElementById("ipm-note").innerHTML = `<div>${esc(resp.note || "")}</div>`;
+
+  const cols = IMPORT_COLUMNS[kind];
+  const thead = document.getElementById("ipm-thead");
+  thead.innerHTML = `<tr>${cols.map(c =>
+    `<th${c.w ? ` style="width:${c.w}px"` : ''}>${esc(c.label)}</th>`).join("")}</tr>`;
+
+  const tbody = document.getElementById("ipm-tbody");
+  if (!_importState.preview.length) {
+    tbody.innerHTML = `<tr><td colspan="${cols.length}" class="empty-state">
+      <div class="empty-state-glyph">⊕</div>未抽到条目，请检查文件内容或配置 LLM API Key 后重试
+    </td></tr>`;
+    document.getElementById("ipm-confirm").disabled = true;
+  } else {
+    tbody.innerHTML = _importState.preview.map(row => `<tr>${cols.map(c => {
+      let v = row[c.key];
+      if (c.fmt) v = c.fmt(v);
+      return `<td class="text-sm">${esc(v == null ? '—' : String(v))}</td>`;
+    }).join("")}</tr>`).join("");
+    document.getElementById("ipm-confirm").disabled = false;
+  }
+  document.getElementById("ipm-status").innerHTML = "";
+  document.getElementById("import-preview-modal").classList.remove("hidden");
+}
+
+async function handleImportSelect(kind, ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  ev.target.value = "";  // 允许重选同文件
+  toast(`正在解析 ${file.name}…`);
   try {
-    const r = await uploadJson("/check-items/import", file);
-    toast(`✓ 创建 ${r.created}，跳过 ${r.skipped}`, "success");
-    loadCheckItems();
-  } catch (e) { toast(e.message, "error"); }
+    const resp = await importDryRun(kind, file);
+    openImportPreview(kind, file, resp);
+  } catch (e) {
+    toast(`✗ 解析失败：${e.message}`, "error");
+  }
+}
+
+document.getElementById("import-indicators").addEventListener("change",
+  ev => handleImportSelect("indicators", ev));
+document.getElementById("import-items").addEventListener("change",
+  ev => handleImportSelect("check-items", ev));
+
+document.getElementById("ipm-confirm").addEventListener("click", async () => {
+  const { kind, file } = _importState;
+  if (!kind || !file) return;
+  const btn = document.getElementById("ipm-confirm");
+  const status = document.getElementById("ipm-status");
+  btn.disabled = true;
+  btn._t = btn.textContent;
+  btn.textContent = "导入中…";
+  status.innerHTML = `<div class="callout callout-info">正在写入数据库…</div>`;
+  try {
+    const result = await importConfirm(kind, file);
+    const errCount = (result.errors || []).length;
+    status.innerHTML = `<div class="callout callout-success">
+      ✓ 完成：新建 ${result.created}，跳过 ${result.skipped}${errCount ? `，错误 ${errCount}` : ''}
+    </div>`;
+    toast(`✓ 已导入 ${result.created} 条${result.skipped ? `（跳过 ${result.skipped}）` : ''}`, "success");
+    setTimeout(() => {
+      document.getElementById("import-preview-modal").classList.add("hidden");
+      if (kind === "indicators") loadIndicators();
+      else loadCheckItems();
+    }, 1000);
+  } catch (e) {
+    status.innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
+    toast(`✗ 导入失败：${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btn._t || "确认导入";
+  }
 });
 
 // ============================================================

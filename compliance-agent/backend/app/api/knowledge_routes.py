@@ -18,6 +18,8 @@ from app.api.schemas import (
 )
 from app.core.auth import get_current_user, log_action, require_admin, require_auditor
 from app.models import CheckItem, Finding, Indicator, Material, User, get_db
+from app.parsers.dispatcher import UnsupportedFormatError
+from app.services import extract_service
 
 indicators_router = APIRouter(prefix="/api/indicators", tags=["knowledge:indicators"])
 checkitems_router = APIRouter(prefix="/api/check-items", tags=["knowledge:check-items"])
@@ -109,6 +111,110 @@ def delete_indicator(indicator_id: int,
                detail=code)
     db.commit()
     return {"status": "ok"}
+
+
+def _normalize_indicator_item(d: dict) -> dict:
+    """统一字段，确保 required_materials 是字符串 JSON。"""
+    req_mats = d.get("required_materials", [])
+    if isinstance(req_mats, list):
+        req_mats_str = json.dumps(req_mats, ensure_ascii=False)
+    else:
+        req_mats_str = req_mats or "[]"
+    return {
+        "indicator_code": str(d.get("indicator_code", "")).strip(),
+        "level": d.get("level", "单位") or "单位",
+        "category": d.get("category", "") or "",
+        "subcategory": d.get("subcategory", "") or "",
+        "name": d.get("name", "") or "",
+        "description": d.get("description", "") or "",
+        "max_score": float(d.get("max_score", 0) or 0),
+        "deduct_rules": d.get("deduct_rules", "") or "",
+        "common_deductions": d.get("common_deductions", "") or "",
+        "required_materials": req_mats_str,
+    }
+
+
+def _persist_indicators(db: Session, items: list[dict], admin: User) -> dict:
+    """批量入库，按 code 去重。"""
+    created, skipped, errors = 0, 0, []
+    for item in items:
+        try:
+            norm = _normalize_indicator_item(item)
+            if not norm["indicator_code"] or not norm["name"]:
+                skipped += 1
+                continue
+            if db.query(Indicator).filter(
+                Indicator.indicator_code == norm["indicator_code"]
+            ).first():
+                skipped += 1
+                continue
+            db.add(Indicator(**norm))
+            created += 1
+        except Exception as exc:
+            errors.append(f"{item.get('indicator_code') or '?'}: {exc}")
+            skipped += 1
+    if created:
+        log_action(db, admin, "indicator.import",
+                   detail=f"创建 {created}，跳过 {skipped}")
+    db.commit()
+    return {"created": created, "skipped": skipped, "errors": errors}
+
+
+@indicators_router.post("/import-from-file", response_model=dict)
+async def import_indicators_from_file(
+    file: UploadFile = File(...),
+    dry_run: bool = Query(False, description="true 仅返回预览不入库"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """从 PDF / Word / Excel / TXT / JSON 自动解析并抽取评价指标。
+
+    - 若文件为 .json：直接按数组解析
+    - 其它格式：LLM 抽取（缺 key 时回退正则启发式）
+    - dry_run=true 时只返回 preview，不写库
+    """
+    raw = await file.read()
+    file_name = file.filename or "untitled"
+    note = ""
+    items: list[dict] = []
+
+    if file_name.lower().endswith(".json"):
+        try:
+            items = json.loads(raw.decode("utf-8"))
+            if not isinstance(items, list):
+                raise HTTPException(400, "JSON 顶层必须为数组")
+            note = f"JSON 直传（共 {len(items)} 条）"
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"JSON 解析失败：{exc}")
+    else:
+        try:
+            items, note = extract_service.extract_indicators(db, file_name, raw)
+        except UnsupportedFormatError as exc:
+            raise HTTPException(400, str(exc))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    if not items:
+        return {
+            "preview": [],
+            "created": 0,
+            "skipped": 0,
+            "errors": [],
+            "note": note + "（未抽到任何条目，请检查文件格式或填入 LLM API Key 重试）",
+        }
+
+    preview_items = [_normalize_indicator_item(d) for d in items[:50]]
+    if dry_run:
+        return {
+            "preview": preview_items,
+            "total": len(items),
+            "note": note,
+        }
+
+    result = _persist_indicators(db, items, admin)
+    result["preview"] = preview_items[:10]
+    result["note"] = note
+    return result
 
 
 @indicators_router.post("/import", response_model=dict)
@@ -231,6 +337,98 @@ def delete_check_item(item_id: int,
                target_type="check_item", target_id=item_id)
     db.commit()
     return {"status": "ok"}
+
+
+def _normalize_check_item(d: dict) -> dict:
+    apps = d.get("applicable_indicators", [])
+    pats = d.get("common_patterns", [])
+    kws = d.get("keywords", [])
+    return {
+        "item_code": str(d.get("item_code", "")).strip(),
+        "dimension": d.get("dimension", "") or "",
+        "subcategory": d.get("subcategory", "") or "",
+        "description": d.get("description", "") or "",
+        "applicable_indicators": json.dumps(apps if isinstance(apps, list) else [], ensure_ascii=False),
+        "risk_level": d.get("risk_level", "中") or "中",
+        "common_patterns": json.dumps(pats if isinstance(pats, list) else [], ensure_ascii=False),
+        "check_method": d.get("check_method", "llm") or "llm",
+        "keywords": json.dumps(kws if isinstance(kws, list) else [], ensure_ascii=False),
+    }
+
+
+def _persist_check_items(db: Session, items: list[dict], admin: User) -> dict:
+    created, skipped, errors = 0, 0, []
+    for d in items:
+        try:
+            norm = _normalize_check_item(d)
+            if not norm["item_code"] or not norm["description"]:
+                skipped += 1
+                continue
+            if db.query(CheckItem).filter(CheckItem.item_code == norm["item_code"]).first():
+                skipped += 1
+                continue
+            db.add(CheckItem(**norm))
+            created += 1
+        except Exception as exc:
+            errors.append(f"{d.get('item_code') or '?'}: {exc}")
+            skipped += 1
+    if created:
+        log_action(db, admin, "check_item.import",
+                   detail=f"创建 {created}，跳过 {skipped}")
+    db.commit()
+    return {"created": created, "skipped": skipped, "errors": errors}
+
+
+@checkitems_router.post("/import-from-file", response_model=dict)
+async def import_check_items_from_file(
+    file: UploadFile = File(...),
+    dry_run: bool = Query(False, description="true 仅返回预览不入库"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """从 PDF/Word/Excel/TXT/JSON 自动解析并抽取问题清单条目。"""
+    raw = await file.read()
+    file_name = file.filename or "untitled"
+    note = ""
+    items: list[dict] = []
+
+    if file_name.lower().endswith(".json"):
+        try:
+            items = json.loads(raw.decode("utf-8"))
+            if not isinstance(items, list):
+                raise HTTPException(400, "JSON 顶层必须为数组")
+            note = f"JSON 直传（共 {len(items)} 条）"
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"JSON 解析失败：{exc}")
+    else:
+        try:
+            items, note = extract_service.extract_check_items(db, file_name, raw)
+        except UnsupportedFormatError as exc:
+            raise HTTPException(400, str(exc))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    if not items:
+        return {
+            "preview": [],
+            "created": 0,
+            "skipped": 0,
+            "errors": [],
+            "note": note + "（未抽到任何条目）",
+        }
+
+    preview_items = [_normalize_check_item(d) for d in items[:50]]
+    if dry_run:
+        return {
+            "preview": preview_items,
+            "total": len(items),
+            "note": note,
+        }
+
+    result = _persist_check_items(db, items, admin)
+    result["preview"] = preview_items[:10]
+    result["note"] = note
+    return result
 
 
 @checkitems_router.post("/import", response_model=dict)
