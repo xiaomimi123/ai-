@@ -2479,12 +2479,12 @@ let _importState = {
 
 const IMPORT_COLUMNS = {
   "indicators": [
-    { key: "indicator_code", label: "指标编号", w: 90 },
-    { key: "level", label: "层级", w: 60 },
-    { key: "category", label: "分类", w: 110 },
-    { key: "name", label: "名称" },
-    { key: "max_score", label: "满分", w: 60 },
-    { key: "required_materials", label: "必需材料", w: 180, fmt: tryJsonList },
+    { key: "indicator_code", label: "编号", w: 70 },
+    { key: "category", label: "指标分类", w: 130 },
+    { key: "name", label: "指标名称", w: 160 },
+    { key: "max_score", label: "标准分", w: 60 },
+    { key: "audit_points", label: "核查要点", w: 260, fmt: truncate160 },
+    { key: "deduct_rules", label: "扣分规则", w: 260, fmt: truncate160 },
   ],
   "check-items": [
     { key: "item_code", label: "编号", w: 90 },
@@ -2501,6 +2501,11 @@ function tryJsonList(v) {
     const arr = typeof v === "string" ? JSON.parse(v) : v;
     return Array.isArray(arr) ? arr.join("、") : String(v);
   } catch { return String(v); }
+}
+
+function truncate160(v) {
+  const s = String(v ?? "");
+  return s.length > 160 ? s.slice(0, 160) + "…" : s;
 }
 
 async function importDryRun(kind, file) {
@@ -2554,7 +2559,15 @@ function openImportPreview(kind, file, resp) {
   document.getElementById("ipm-sub").textContent =
     `文件：${file.name} · 抽取条目：${_importState.total}（预览前 ${_importState.preview.length} 条）`;
 
-  document.getElementById("ipm-note").innerHTML = `<div>${esc(resp.note || "")}</div>`;
+  // note 样式：Excel 表头识别 = 绿色（快/准），LLM 抽取 = 蓝色，正则 = 黄色
+  const note = String(resp.note || "");
+  let kind_color = "info";
+  if (note.includes("Excel 表头自动识别")) kind_color = "success";
+  else if (note.includes("LLM 抽取")) kind_color = "info";
+  else if (note.includes("正则启发式")) kind_color = "warn";
+  document.getElementById("ipm-note").innerHTML = note
+    ? `<div class="callout callout-${kind_color}">📋 ${esc(note)}</div>`
+    : "";
 
   const cols = IMPORT_COLUMNS[kind];
   const thead = document.getElementById("ipm-thead");
@@ -2571,7 +2584,8 @@ function openImportPreview(kind, file, resp) {
     tbody.innerHTML = _importState.preview.map(row => `<tr>${cols.map(c => {
       let v = row[c.key];
       if (c.fmt) v = c.fmt(v);
-      return `<td class="text-sm">${esc(v == null ? '—' : String(v))}</td>`;
+      const txt = v == null ? '—' : String(v);
+      return `<td class="text-sm" style="white-space:pre-wrap;line-height:1.5;vertical-align:top">${esc(txt)}</td>`;
     }).join("")}</tr>`).join("");
     document.getElementById("ipm-confirm").disabled = false;
   }
