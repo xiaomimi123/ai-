@@ -122,6 +122,50 @@ def download_regulation(
     )
 
 
+@regulations_router.get("/{reg_id}/content", response_model=dict)
+def get_regulation_content(
+    reg_id: int,
+    max_chars: int = Query(default=20000, le=100000),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """返回法规解析后的全文文本 + 条款分块预览。"""
+    reg = db.get(Regulation, reg_id)
+    if not reg:
+        raise HTTPException(404, "法规不存在")
+
+    text = reg.parsed_text or ""
+    total = len(text)
+    truncated = total > max_chars
+    text_preview = text[:max_chars]
+
+    # 用 chunker 再切一次给前端预览（不重入向量库）
+    chunks_preview = []
+    try:
+        from app.rag.chunking import chunk_regulation
+        chunks = chunk_regulation(
+            text, law_name=reg.title or None,
+            category=reg.doc_type, source=reg.file_name,
+        )
+        for c in chunks[:50]:  # 最多 50 个 chunk 供预览
+            chunks_preview.append({
+                "citation": c.metadata.get("citation", "—"),
+                "article": c.metadata.get("article", ""),
+                "text": c.text[:1500],
+            })
+    except Exception as exc:
+        print(f"[regulation.content] chunking failed: {exc}")
+
+    return {
+        "regulation": RegulationOut.model_validate(reg).model_dump(mode="json"),
+        "text": text_preview,
+        "text_total_chars": total,
+        "truncated": truncated,
+        "chunks": chunks_preview,
+        "chunks_total": reg.chunks_count,
+    }
+
+
 @regulations_router.delete("/{reg_id}")
 def delete_regulation(
     reg_id: int,

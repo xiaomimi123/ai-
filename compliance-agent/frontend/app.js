@@ -1029,6 +1029,7 @@ async function loadRegulations() {
         <td class="text-sm text-muted">${fmtTime(r.created_at)}</td>
         <td>
           <div class="flex gap-2" style="justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" onclick="previewRegulation(${r.id})" title="预览">👁</button>
             <a href="${API}/regulations/${r.id}/download" target="_blank" class="btn btn-ghost btn-sm" title="下载">↓</a>
             ${isAdmin ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteRegulation(${r.id}, '${esc(r.title)}')" title="删除">✕</button>` : ''}
           </div>
@@ -1052,6 +1053,69 @@ function docTypeBadge(t) {
   const cls = (map[t] || ['badge badge-gray'])[0];
   return `<span class="${cls}">${esc(t)}</span>`;
 }
+
+window.previewRegulation = async function(id) {
+  toast("加载法规内容…");
+  try {
+    const data = await api(`/regulations/${id}/content`);
+    const r = data.regulation;
+    document.getElementById("rp-title").textContent = r.title;
+    document.getElementById("rp-doctype").innerHTML = docTypeBadge(r.doc_type);
+    document.getElementById("rp-region").innerHTML = `<span class="badge badge-gray">${esc(r.region)}</span>`;
+
+    const metaParts = [];
+    if (r.issuer) metaParts.push(esc(r.issuer));
+    if (r.doc_number) metaParts.push(`<span class="code-id">${esc(r.doc_number)}</span>`);
+    if (r.effective_date) metaParts.push(`生效 ${esc(r.effective_date)}`);
+    metaParts.push(`文件 ${esc(r.file_name)} (${(r.file_size / 1024).toFixed(1)} KB)`);
+    metaParts.push(`<span class="badge badge-green">${r.chunks_count} 条款块入向量库</span>`);
+    document.getElementById("rp-meta").innerHTML = metaParts.join(" · ");
+
+    document.getElementById("rp-text").textContent = data.text;
+    const trunc = document.getElementById("rp-truncated");
+    if (data.truncated) {
+      trunc.textContent = `（已截取前 ${data.text.length} / 全文 ${data.text_total_chars} 字符）`;
+      trunc.classList.remove("hidden");
+    } else {
+      trunc.classList.add("hidden");
+    }
+
+    document.getElementById("rp-chunks-count").textContent = data.chunks.length;
+    document.getElementById("rp-chunks-list").innerHTML = data.chunks.length
+      ? data.chunks.map((c, i) => `
+        <div style="border-bottom:1px solid var(--divider);padding:12px 8px">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="code-id">#${pad(i + 1)}</span>
+            <span class="badge badge-blue">${esc(c.citation)}</span>
+            ${c.article ? `<span class="text-xs text-faint">${esc(c.article)}</span>` : ''}
+          </div>
+          <div style="font-size:13px;line-height:1.6;color:var(--text-secondary);white-space:pre-wrap">${esc(c.text)}</div>
+        </div>`).join("")
+      : `<div class="empty-state">该法规未生成条款分块</div>`;
+
+    document.getElementById("rp-download").href = `${API}/regulations/${id}/download`;
+
+    // 默认显示全文 tab
+    document.querySelectorAll("[data-rptab]").forEach(b => {
+      b.classList.toggle("active", b.dataset.rptab === "text");
+    });
+    document.getElementById("rp-tab-text").classList.remove("hidden");
+    document.getElementById("rp-tab-chunks").classList.add("hidden");
+
+    document.getElementById("reg-preview-modal").classList.remove("hidden");
+  } catch (e) {
+    toast("预览失败：" + e.message, "error");
+  }
+};
+
+// 预览模态的 tab 切换
+document.addEventListener("click", ev => {
+  if (!ev.target.matches("[data-rptab]")) return;
+  const t = ev.target.dataset.rptab;
+  document.querySelectorAll("[data-rptab]").forEach(b => b.classList.toggle("active", b === ev.target));
+  document.getElementById("rp-tab-text").classList.toggle("hidden", t !== "text");
+  document.getElementById("rp-tab-chunks").classList.toggle("hidden", t !== "chunks");
+});
 
 window.deleteRegulation = async function(id, title) {
   if (!confirm(`确定删除法规《${title}》？\n该法规的原始文件将被删除（向量库内的索引块保留）。`)) return;

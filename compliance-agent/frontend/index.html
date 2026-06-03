@@ -992,6 +992,37 @@
   </div>
 </div>
 
+<!-- 法规预览模态 -->
+<div id="reg-preview-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:920px;max-height:90vh;display:flex;flex-direction:column">
+    <div class="flex items-center gap-3 mb-2">
+      <h2 id="rp-title" class="modal-title" style="margin-bottom:0">法规预览</h2>
+      <span id="rp-doctype"></span>
+      <span id="rp-region"></span>
+    </div>
+    <div id="rp-meta" class="text-sm text-muted mb-3"></div>
+
+    <div class="subnav" style="margin:0 0 12px;display:inline-flex;width:auto">
+      <button class="subnav-item active" data-rptab="text">📄 全文</button>
+      <button class="subnav-item" data-rptab="chunks">📚 条款分块 <span id="rp-chunks-count" class="subnav-count"></span></button>
+    </div>
+
+    <div id="rp-tab-text" class="rp-tab" style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:16px;background:var(--bg-subtle)">
+      <pre id="rp-text" style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.7;margin:0"></pre>
+      <div id="rp-truncated" class="text-xs text-muted text-center mt-3 hidden"></div>
+    </div>
+
+    <div id="rp-tab-chunks" class="rp-tab hidden" style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-subtle)">
+      <div id="rp-chunks-list"></div>
+    </div>
+
+    <div class="action-bar mt-3">
+      <a id="rp-download" class="btn btn-secondary" target="_blank">⬇ 下载原文件</a>
+      <button class="btn btn-ghost" data-close-modal="#reg-preview-modal">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 改密码模态 -->
 <div id="pwd-modal" class="modal-overlay hidden">
   <div class="modal" style="max-width:440px">
