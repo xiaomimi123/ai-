@@ -498,6 +498,14 @@ async function loadTaskWorkspace(taskId) {
     State.taskDetail = detail;
     State.indicators = indicators;
 
+    // 已核查的任务预拉 worksheet（用于 5 维度统计）
+    State.worksheet = null;
+    if (["ai_done", "reviewing", "finalized", "archived"].includes(detail.task.status)) {
+      try {
+        State.worksheet = await api(`/tasks/${taskId}/worksheet`);
+      } catch { /* 底稿不存在则忽略 */ }
+    }
+
     document.getElementById("tw-task-id").textContent = `任务 #${pad(detail.task.id)}`;
     document.getElementById("tw-title").textContent = detail.task.name;
     document.getElementById("tw-meta").innerHTML =
@@ -776,18 +784,59 @@ function renderOverview() {
   // 评分卡（从 task.stats 解析）
   renderScoreCard(d.task);
 
-  const byType = {};
-  findings.forEach(f => byType[f.finding_type] = (byType[f.finding_type] || 0) + 1);
+  // 5 大维度统一聚合：真实性 / 完整性 / 合规性 / 重复性 / 匹配性
+  const dims = aggregate5Dimensions(findings, State.worksheet);
   const breakdown = document.getElementById("tw-dimension-breakdown");
-  if (Object.keys(byType).length === 0) {
+  const order = ["真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题"];
+  const subtitles = {
+    "真实性问题": "公章/签字/年度/正式性",
+    "完整性问题": "要素/章节/材料缺失",
+    "合规性问题": "制度/流程/法规违规",
+    "重复性问题": "跨单位材料重复",
+    "匹配性问题": "材料与指标不匹配",
+  };
+  const totalCount = Object.values(dims).reduce((a, b) => a + b, 0);
+  if (totalCount === 0) {
     breakdown.innerHTML = `<div class="empty-state" style="grid-column:1/-1">尚无核查发现</div>`;
   } else {
-    breakdown.innerHTML = Object.entries(byType).map(([k, v]) => `
-      <div style="padding:16px;background:var(--bg);border-radius:10px">
-        <div class="text-xs text-faint">${esc(k)}</div>
-        <div style="font-size:22px;font-weight:700;margin-top:4px;letter-spacing:-0.02em">${v}</div>
-      </div>`).join("");
+    breakdown.innerHTML = order.map(k => {
+      const v = dims[k] || 0;
+      const dim = v > 0 ? "" : "opacity:0.55";
+      return `
+        <div style="padding:16px;background:var(--bg);border-radius:10px;${dim}">
+          <div class="text-xs text-faint">${k}</div>
+          <div style="font-size:22px;font-weight:700;margin-top:4px;letter-spacing:-0.02em">${v}</div>
+          <div class="text-xs text-faint" style="margin-top:2px">${subtitles[k]}</div>
+        </div>`;
+    }).join("");
   }
+}
+
+// 把多源信号聚合到 5 个维度
+function aggregate5Dimensions(findings, worksheet) {
+  const buckets = {
+    "真实性问题": 0, "完整性问题": 0, "合规性问题": 0,
+    "重复性问题": 0, "匹配性问题": 0,
+  };
+  const REAL = new Set(["真实性问题", "正式性问题", "年度一致性问题"]);
+  const COMPLETE = new Set(["完整性问题", "要素完整性问题"]);
+  for (const f of findings || []) {
+    const t = f.finding_type || "";
+    if (REAL.has(t)) buckets["真实性问题"]++;
+    else if (COMPLETE.has(t)) buckets["完整性问题"]++;
+    else buckets["合规性问题"]++; // 合规性、相关性、评分合规、复核规范、报告编报等
+  }
+  // 从工作底稿读重复性 / 匹配性
+  if (worksheet?.rows) {
+    for (const row of worksheet.rows) {
+      try {
+        const f = JSON.parse(row.material_flags || "{}");
+        if (f.duplicate) buckets["重复性问题"]++;
+        if (f.match_low) buckets["匹配性问题"]++;
+      } catch {}
+    }
+  }
+  return buckets;
 }
 
 function renderScoreCard(task) {
@@ -938,14 +987,26 @@ function renderMaterials() {
     });
   });
 
-  // 触发核查按钮防呆
+  // 触发核查按钮：按任务状态 + 绑定情况 动态切换
   const runBtn = document.getElementById("tw-run-btn");
   if (runBtn) {
     const allBound = total > 0 && bound === total;
-    runBtn.disabled = !allBound;
-    runBtn.title = allBound ? "" : `仍有 ${total - bound} 份材料未绑定指标`;
-    runBtn.style.opacity = allBound ? "" : "0.5";
-    runBtn.style.cursor = allBound ? "" : "not-allowed";
+    const status = d.task.status;
+    if (status === "running") {
+      runBtn.disabled = true;
+      runBtn.innerHTML = `<span class="tw-progress-spinner" style="border-color:#cfdcf5;border-top-color:#fff;width:12px;height:12px"></span> <span>核查中…</span>`;
+      runBtn.title = "任务正在核查中，请等待完成";
+    } else if (["ai_done", "reviewing", "finalized", "archived"].includes(status)) {
+      runBtn.disabled = !allBound;
+      runBtn.innerHTML = `${icon("refresh")} <span>重新核查</span>`;
+      runBtn.title = allBound ? "重新核查将清空已有疑点与底稿" : `仍有 ${total - bound} 份材料未绑定指标`;
+    } else {
+      runBtn.disabled = !allBound;
+      runBtn.innerHTML = `${icon("play")} <span>触发 AI 核查</span>`;
+      runBtn.title = allBound ? "" : `仍有 ${total - bound} 份材料未绑定指标`;
+    }
+    runBtn.style.opacity = runBtn.disabled ? "0.5" : "";
+    runBtn.style.cursor = runBtn.disabled ? "not-allowed" : "";
   }
 }
 
@@ -1115,23 +1176,21 @@ document.getElementById("mfp-cancel").addEventListener("click", () => {
 
 document.getElementById("tw-run-btn").addEventListener("click", async () => {
   if (!State.taskDetail.materials.length) { toast("请先上传材料", "error"); return; }
-  toast("AI 核查中…可能耗时数十秒");
+  const status = State.taskDetail?.task?.status;
+  if (status === "running") {
+    toast("任务正在核查中，请等待完成", "warn");
+    return;
+  }
+  let url = `/tasks/${State.taskId}/run`;
+  if (["ai_done", "reviewing", "finalized", "archived"].includes(status)) {
+    if (!confirm("⚠️ 重新核查将清空已有疑点和工作底稿。\n\n确定继续吗？")) return;
+    url += "?force=true";
+  }
+  toast("AI 核查中…快速模式约 5 分钟、精确模式 10-15 分钟");
   try {
-    await api(`/tasks/${State.taskId}/run`, { method: "POST" });
-    for (let i = 0; i < 60; i++) {
-      const d = await api(`/tasks/${State.taskId}`);
-      if (d.task.status !== "running") {
-        State.taskDetail = d;
-        toast(d.task.summary, "success");
-        await loadTaskWorkspace(State.taskId);
-        State.subtab = "findings";
-        document.querySelectorAll('.subnav-item').forEach(x =>
-          x.classList.toggle("active", x.dataset.subtab === "findings"));
-        renderSubtab();
-        return;
-      }
-      await new Promise(r => setTimeout(r, 1000));
-    }
+    await api(url, { method: "POST" });
+    // 立即拉一下让进度条出现
+    await loadTaskWorkspace(State.taskId);
   } catch (e) { toast(e.message, "error"); }
 });
 

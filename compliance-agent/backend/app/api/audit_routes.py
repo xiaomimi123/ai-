@@ -199,17 +199,31 @@ def auto_bind_materials(task_id: int,
 
 @tasks_router.post("/{task_id}/run", response_model=AuditTaskOut)
 def run_task(task_id: int,
+             force: bool = Query(False, description="已完成的任务必须设 true 才允许重跑"),
              db: Session = Depends(get_db),
              user: User = Depends(require_auditor)):
-    """触发 AI 核查（异步入队，eager 模式立即返回 done）。"""
+    """触发 AI 核查（异步入队，eager 模式立即返回 done）。
+
+    防呆：
+    - status=running：拒绝（避免并行重复跑）
+    - status in ai_done/reviewing/finalized/archived：要求 force=true（避免误点重跑）
+    """
     task = db.get(AuditTask, task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
     if not task.materials:
         raise HTTPException(400, "任务下尚无材料，请先上传")
+    if task.status == "running":
+        raise HTTPException(400, "任务正在核查中，请等待完成后再操作")
+    if task.status in ("ai_done", "reviewing", "finalized", "archived") and not force:
+        raise HTTPException(
+            400,
+            "任务已完成核查。重新核查会清空已有疑点与工作底稿，请确认后带 force=true 参数",
+        )
     log_action(db, user, "task.run",
                target_type="task", target_id=task.id,
-               detail=f"触发 AI 核查（{len(task.materials)} 份材料）")
+               detail=f"触发 AI 核查（{len(task.materials)} 份材料"
+                      f"{'，强制重跑' if force else ''}）")
     db.commit()
     run_audit_task.delay(task.id)
     db.refresh(task)
