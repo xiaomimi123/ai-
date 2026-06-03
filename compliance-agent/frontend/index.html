@@ -312,7 +312,7 @@
               单文件上传时可绑定具体指标；批量上传文件夹时材料归入共享池，
               核查时对任务的全部指标自动匹配。系统自动抽取公章、签字、日期、文号等关键要素。
             </p>
-            <form id="material-upload-form" class="grid-3">
+            <form id="material-upload-form" class="grid-3" style="align-items:end">
               <div>
                 <label class="form-label">绑定指标</label>
                 <select id="md-indicator" class="form-select">
@@ -323,8 +323,8 @@
                 <label class="form-label">材料文件</label>
                 <input type="file" id="md-file" class="form-input" accept=".txt,.md,.docx,.pdf,.xlsx" required />
               </div>
-              <div style="display:flex;align-items:flex-end">
-                <button type="submit" class="btn btn-primary w-full">上传</button>
+              <div>
+                <button type="submit" class="btn btn-primary w-full" style="height:40px">上传</button>
               </div>
             </form>
             <div id="md-status" class="text-sm mt-3"></div>
