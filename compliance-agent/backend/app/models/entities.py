@@ -90,7 +90,8 @@ class Indicator(Base):
     name: Mapped[str] = mapped_column(String(256))
     description: Mapped[str] = mapped_column(Text, default="")
     max_score: Mapped[float] = mapped_column(default=0.0)
-    deduct_rules: Mapped[str] = mapped_column(Text, default="")       # 扣分细则原文
+    audit_points: Mapped[str] = mapped_column(Text, default="")       # 核查要点（底稿第 7 列）
+    deduct_rules: Mapped[str] = mapped_column(Text, default="")       # 扣分规则（底稿第 8 列）
     common_deductions: Mapped[str] = mapped_column(Text, default="")  # 常见扣分情形（黄金数据）
     required_materials: Mapped[str] = mapped_column(Text, default="") # JSON 数组：要求的材料类型
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -229,6 +230,9 @@ class Material(Base):
     # v3 §3.3 key_elements（公章/签字/日期/文号），JSON 序列化
     key_elements: Mapped[str] = mapped_column(Text, default="")
     parsed_text: Mapped[str] = mapped_column(Text, default="")  # 解析后全文（截断）
+    # 跨任务查重：MD5(content) 用于精确比对，前 500 字 hash 用于相似比对
+    content_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    content_fingerprint: Mapped[str] = mapped_column(String(64), default="", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     task: Mapped["AuditTask"] = relationship(back_populates="materials")
@@ -290,3 +294,66 @@ class Finding(Base):
     task: Mapped["AuditTask"] = relationship(back_populates="findings")
     material: Mapped[Optional["Material"]] = relationship()
     indicator: Mapped[Optional["Indicator"]] = relationship()
+
+
+# ============================================================
+# 工作底稿（v3 阶段二：AI 阅卷产物）
+# ============================================================
+class Worksheet(Base):
+    """工作底稿头（与任务 1:1）。
+
+    阅卷流程：AI 跑完 → 自动建底稿草案 →（V2）人工复核改单元格 → 定稿 → 报告。
+    每条指标对应一行 WorksheetRow，本表存底稿级元数据：被核查单位名称、组
+    织机构代码、核查/复核签名、定稿状态。
+    """
+    __tablename__ = "worksheets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("audit_tasks.id"), unique=True, index=True
+    )
+    unit_name: Mapped[str] = mapped_column(String(256), default="")
+    unit_code: Mapped[str] = mapped_column(String(64), default="")
+    auditor_name: Mapped[str] = mapped_column(String(64), default="")
+    reviewer_name: Mapped[str] = mapped_column(String(64), default="")
+    # draft(AI 草稿) | reviewing(复核中) | finalized(已定稿)
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    rows: Mapped[List["WorksheetRow"]] = relationship(
+        back_populates="worksheet",
+        cascade="all, delete-orphan",
+        order_by="WorksheetRow.serial",
+    )
+
+
+class WorksheetRow(Base):
+    """工作底稿行（每条指标在一份底稿里一行，AI 打分粒度）。"""
+    __tablename__ = "worksheet_rows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    worksheet_id: Mapped[int] = mapped_column(
+        ForeignKey("worksheets.id"), index=True
+    )
+    indicator_id: Mapped[int] = mapped_column(
+        ForeignKey("indicators.id"), index=True
+    )
+    serial: Mapped[int] = mapped_column(Integer, default=0)           # 1..55 显示序号
+    original_score: Mapped[float] = mapped_column(default=0.0)        # 核查前得分（自评分）
+    audited_score: Mapped[float] = mapped_column(default=0.0)         # 核查后得分（AI 阅卷）
+    audit_finding_text: Mapped[str] = mapped_column(Text, default="") # 核查情况说明（≤150 字）
+    # 7 对 14 项复选框 JSON：{real,fake,relevant,irrelevant,effective,ineffective,
+    # complete,incomplete,compliant,non_compliant,duplicate,unique,match_high,match_low}
+    material_flags: Mapped[str] = mapped_column(Text, default="{}")
+    # 反向链接：本行据以判断的 Finding id 列表（JSON 数组），便于追溯
+    linked_finding_ids: Mapped[str] = mapped_column(Text, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    worksheet: Mapped["Worksheet"] = relationship(back_populates="rows")
+    indicator: Mapped["Indicator"] = relationship()

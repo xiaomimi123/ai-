@@ -18,6 +18,7 @@ from app.api.schemas import (
     FindingReviewRequest,
     MaterialOut,
     TaskDetailOut,
+    WorksheetOut,
 )
 from app.core.auth import get_current_user, log_action, require_auditor
 from app.core.permissions import is_admin, is_auditor_or_above, is_unit
@@ -25,6 +26,8 @@ from app.models import AuditTask, AuditUnit, Finding, Material, User, get_db
 from app.parsers.dispatcher import UnsupportedFormatError
 from app.services import audit_service
 from app.services.report_service import build_report_docx
+from app.services.worksheet_export import build_worksheet_xlsx
+from app.services.worksheet_service import build_worksheet_draft, get_worksheet
 from app.tasks import run_audit_task
 
 units_router = APIRouter(prefix="/api/units", tags=["audit:units"])
@@ -211,6 +214,71 @@ def download_task_report(task_id: int,
         headers={
             "Content-Disposition":
                 f"attachment; filename=report_{task.id}.docx; "
+                f"filename*=UTF-8''{filename_quoted}"
+        },
+    )
+
+
+# ============================================================
+# 工作底稿（AI 阅卷 → 底稿 → 报告）
+# ============================================================
+@tasks_router.get("/{task_id}/worksheet", response_model=WorksheetOut)
+def get_task_worksheet(task_id: int,
+                       db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """获取任务的工作底稿（含 55 行明细）。AI 跑完后自动生成。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权查看")
+    ws = get_worksheet(db, task_id)
+    if not ws:
+        raise HTTPException(404, "底稿尚未生成（请先触发 AI 核查）")
+    return ws
+
+
+@tasks_router.post("/{task_id}/worksheet/rebuild", response_model=WorksheetOut)
+def rebuild_task_worksheet(task_id: int,
+                           db: Session = Depends(get_db),
+                           user: User = Depends(require_auditor)):
+    """根据当前 Finding 状态重建底稿（V1：覆盖式重跑）。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权操作")
+    ws = build_worksheet_draft(db, task)
+    log_action(db, user, "worksheet.rebuild",
+               target_type="task", target_id=task.id,
+               detail=f"重建工作底稿 行数={len(ws.rows)}")
+    db.commit()
+    return ws
+
+
+@tasks_router.get("/{task_id}/worksheet.xlsx")
+def download_task_worksheet_xlsx(task_id: int,
+                                 db: Session = Depends(get_db),
+                                 user: User = Depends(get_current_user)):
+    """下载 Excel 格式工作底稿（1:1 复刻模板）。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权下载")
+    ws = get_worksheet(db, task_id)
+    if not ws:
+        raise HTTPException(404, "底稿尚未生成")
+    data = build_worksheet_xlsx(db, task, ws)
+    safe_name = f"内控评价核查工作底稿_{task.eval_year}_{task.id}.xlsx"
+    from urllib.parse import quote
+    filename_quoted = quote(safe_name)
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition":
+                f"attachment; filename=worksheet_{task.id}.xlsx; "
                 f"filename*=UTF-8''{filename_quoted}"
         },
     )

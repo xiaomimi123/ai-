@@ -272,6 +272,7 @@
         <button class="subnav-item active" data-subtab="overview">概览</button>
         <button class="subnav-item" data-subtab="materials">材料 <span class="subnav-count" id="tw-count-materials">0</span></button>
         <button class="subnav-item" data-subtab="findings">核查发现 <span class="subnav-count" id="tw-count-findings">0</span></button>
+        <button class="subnav-item" data-subtab="worksheet">工作底稿 <span class="subnav-count" id="tw-count-worksheet">0</span></button>
       </nav>
 
       <div class="page-body">
@@ -372,6 +373,45 @@
                 <div>从左侧列表选择一条发现<br/>进行复核标注或整改跟踪</div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 工作底稿 -->
+        <div id="tw-worksheet" class="subtab-panel hidden">
+          <div class="card mb-4">
+            <div class="flex justify-between items-center">
+              <div>
+                <div class="section-title" style="margin-bottom:4px">AI 阅卷工作底稿</div>
+                <p class="text-sm text-muted" style="margin:0">
+                  每条指标一行，AI 对照核查要点与扣分规则给出
+                  <strong>核查后得分</strong>和<strong>核查情况说明</strong>，并对
+                  真实性 / 相关性 / 有效性 / 完整性 / 合规性 / 跨单位重复 / 匹配度
+                  共 7 个维度打标。
+                </p>
+              </div>
+              <div class="action-bar">
+                <button class="btn btn-secondary btn-sm" id="ws-rebuild-btn"><span data-icon="refresh"></span><span>重新生成</span></button>
+                <button class="btn btn-primary btn-sm" id="ws-download-btn"><span data-icon="download"></span><span>下载 Excel</span></button>
+              </div>
+            </div>
+            <div id="ws-summary" class="text-sm mt-3" style="display:flex;gap:24px;flex-wrap:wrap"></div>
+          </div>
+          <div class="card" style="padding:0;overflow:auto;max-height:70vh">
+            <table class="table table-compact" id="ws-table">
+              <thead>
+                <tr>
+                  <th style="width:42px">#</th>
+                  <th style="min-width:120px">指标分类</th>
+                  <th style="min-width:160px">指标名称</th>
+                  <th style="width:64px">标准</th>
+                  <th style="width:64px">核查前</th>
+                  <th style="width:64px">核查后</th>
+                  <th>核查情况说明</th>
+                  <th style="min-width:220px">材料判定</th>
+                </tr>
+              </thead>
+              <tbody id="ws-tbody"></tbody>
+            </table>
           </div>
         </div>
       </div>

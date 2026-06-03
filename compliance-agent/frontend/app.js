@@ -593,7 +593,113 @@ function renderSubtab() {
   if (State.subtab === "overview") renderOverview();
   if (State.subtab === "materials") renderMaterials();
   if (State.subtab === "findings") renderFindings();
+  if (State.subtab === "worksheet") loadWorksheet();
 }
+
+// 7 对复选框标签
+const WS_FLAG_PAIRS = [
+  ["real", "材料真实", "fake", "材料虚假"],
+  ["relevant", "与指标相关", "irrelevant", "与指标无关"],
+  ["effective", "材料有效", "ineffective", "材料无效"],
+  ["complete", "材料完整", "incomplete", "材料不完整"],
+  ["compliant", "制度合规", "non_compliant", "制度不合规"],
+  ["duplicate", "跨单位重复", "unique", "未跨单位重复"],
+  ["match_high", "匹配度高", "match_low", "匹配度低"],
+];
+
+function renderFlagBadges(flagsObj) {
+  return WS_FLAG_PAIRS.map(([pk, pl, nk, nl]) => {
+    const pos = !!flagsObj[pk], neg = !!flagsObj[nk];
+    // 正向通过用绿、负向命中用红，未判定用灰
+    let cls = "ws-flag-na", label = pl;
+    if (pos && !neg) { cls = "ws-flag-ok"; label = pl; }
+    else if (!pos && neg) { cls = "ws-flag-bad"; label = nl; }
+    return `<span class="ws-flag ${cls}">${label}</span>`;
+  }).join("");
+}
+
+async function loadWorksheet() {
+  const body = document.getElementById("ws-tbody");
+  body.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding:24px">加载底稿中…</td></tr>`;
+  document.getElementById("ws-summary").innerHTML = "";
+  document.getElementById("tw-count-worksheet").textContent = "";
+
+  let ws;
+  try {
+    ws = await api(`/api/tasks/${State.taskId}/worksheet`);
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding:24px">底稿尚未生成。请先在"材料"标签页触发 AI 核查。</td></tr>`;
+    return;
+  }
+  State.worksheet = ws;
+  document.getElementById("tw-count-worksheet").textContent = ws.rows.length;
+
+  // 用指标库 id→name/category 映射
+  const inds = await api(`/api/indicators`);
+  const indMap = new Map(inds.map(i => [i.id, i]));
+
+  let totMax = 0, totBefore = 0, totAfter = 0;
+  body.innerHTML = ws.rows.map(r => {
+    const ind = indMap.get(r.indicator_id) || {};
+    totMax += +ind.max_score || 0;
+    totBefore += r.original_score || 0;
+    totAfter += r.audited_score || 0;
+    const flags = (() => { try { return JSON.parse(r.material_flags || "{}"); } catch { return {}; } })();
+    const cat = ind.subcategory ? `${ind.category}<br/><span class="text-xs text-muted">${ind.subcategory}</span>` : (ind.category || "");
+    return `
+      <tr>
+        <td class="text-center text-muted">${r.serial}</td>
+        <td class="text-sm">${cat}</td>
+        <td>${escapeHtml(ind.name || "")}</td>
+        <td class="text-center">${ind.max_score ?? ""}</td>
+        <td class="text-center">${(r.original_score ?? 0).toFixed(2)}</td>
+        <td class="text-center"><strong>${(r.audited_score ?? 0).toFixed(2)}</strong></td>
+        <td class="text-sm">${escapeHtml(r.audit_finding_text || "")}</td>
+        <td>${renderFlagBadges(flags)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  document.getElementById("ws-summary").innerHTML = `
+    <span><span class="text-muted">单位：</span><strong>${escapeHtml(ws.unit_name || "—")}</strong></span>
+    <span><span class="text-muted">底稿状态：</span><strong>${ws.status}</strong></span>
+    <span><span class="text-muted">标准分合计：</span><strong>${totMax.toFixed(0)}</strong></span>
+    <span><span class="text-muted">核查前合计：</span><strong>${totBefore.toFixed(2)}</strong></span>
+    <span><span class="text-muted">核查后合计：</span><strong style="color:var(--brand-red)">${totAfter.toFixed(2)}</strong></span>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+document.addEventListener("click", async (e) => {
+  if (e.target.closest("#ws-download-btn")) {
+    const token = localStorage.getItem("audit.token");
+    const url = `/api/tasks/${State.taskId}/worksheet.xlsx`;
+    // 用 fetch + blob 触发下载（带 token）
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) { alert("下载失败：" + await r.text()); return; }
+    const blob = await r.blob();
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const name = m ? decodeURIComponent(m[1]) : `worksheet_${State.taskId}.xlsx`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  if (e.target.closest("#ws-rebuild-btn")) {
+    if (!confirm("根据当前 Finding 状态重新生成底稿？现有底稿会被覆盖。")) return;
+    try {
+      await api(`/api/tasks/${State.taskId}/worksheet/rebuild`, { method: "POST" });
+      await loadWorksheet();
+    } catch (err) {
+      alert("重建失败：" + err.message);
+    }
+  }
+});
 
 function renderOverview() {
   const d = State.taskDetail;

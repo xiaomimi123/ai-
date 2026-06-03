@@ -19,11 +19,36 @@ class Base(DeclarativeBase):
 
 
 def init_db() -> None:
-    """建表（首次初始化）+ 种子管理员账号。"""
+    """建表（首次初始化）+ 老库自动补列 + 种子管理员账号。"""
     import app.models.entities  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(bind=engine)
+    _ensure_columns()
     _seed_admin()
+
+
+# 历次新增的列（旧库自动补全）
+_EXTRA_COLUMNS: list[tuple[str, str, str]] = [
+    # (table, column, ddl)
+    ("indicators", "audit_points", "TEXT NOT NULL DEFAULT ''"),
+    ("materials", "content_hash", "VARCHAR(64) NOT NULL DEFAULT ''"),
+    ("materials", "content_fingerprint", "VARCHAR(64) NOT NULL DEFAULT ''"),
+]
+
+
+def _ensure_columns() -> None:
+    """对存量库幂等地 ALTER TABLE ADD COLUMN（SQLite/PG 兼容子集）。"""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    for table, col, ddl in _EXTRA_COLUMNS:
+        if table not in existing_tables:
+            continue
+        cols = {c["name"] for c in insp.get_columns(table)}
+        if col in cols:
+            continue
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
 
 
 def _seed_admin() -> None:

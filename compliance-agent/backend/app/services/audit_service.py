@@ -108,6 +108,12 @@ def upload_material(db: Session, task: AuditTask, *,
         if not indicator:
             raise HTTPException(404, f"指标 {indicator_id} 不存在")
 
+    # 跨任务材料查重指纹：MD5(原始字节) + MD5(前 5000 字解析文本归一化)
+    import hashlib, re as _re
+    content_hash = hashlib.md5(content).hexdigest()
+    norm_text = _re.sub(r"\s+", "", (parsed.text or "")[:5000])
+    content_fp = hashlib.md5(norm_text.encode("utf-8")).hexdigest() if norm_text else ""
+
     material = Material(
         task_id=task.id,
         indicator_id=indicator_id,
@@ -117,6 +123,8 @@ def upload_material(db: Session, task: AuditTask, *,
         is_scanned=parsed.metadata.get("scanned", False),
         key_elements=json.dumps(ke.__dict__, ensure_ascii=False, default=str),
         parsed_text=parsed.text[:200000],  # 截断防爆
+        content_hash=content_hash,
+        content_fingerprint=content_fp,
     )
     db.add(material); db.flush()
     log_action(db, user, "material.upload",

@@ -93,6 +93,7 @@ class IndicatorIn(BaseModel):
     name: str
     description: str = ""
     max_score: float = 0.0
+    audit_points: str = ""
     deduct_rules: str = ""
     common_deductions: str = ""
     required_materials: List[str] = Field(default_factory=list)
@@ -107,10 +108,44 @@ class IndicatorOut(BaseModel):
     name: str
     description: str
     max_score: float
+    audit_points: str
     deduct_rules: str
     common_deductions: str
     required_materials: str
     created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# 工作底稿（AI 阅卷产物）
+# ============================================================
+class WorksheetRowOut(BaseModel):
+    id: int
+    indicator_id: int
+    serial: int
+    original_score: float
+    audited_score: float
+    audit_finding_text: str
+    material_flags: str
+    linked_finding_ids: str
+
+    class Config:
+        from_attributes = True
+
+
+class WorksheetOut(BaseModel):
+    id: int
+    task_id: int
+    unit_name: str
+    unit_code: str
+    auditor_name: str
+    reviewer_name: str
+    status: str
+    rows: List[WorksheetRowOut] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

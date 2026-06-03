@@ -12,6 +12,8 @@ from app.models.entities import (
     Material,
     Regulation,
     User,
+    Worksheet,
+    WorksheetRow,
 )
 
 __all__ = [
@@ -19,4 +21,5 @@ __all__ = [
     "User", "AuthToken", "AuditLog", "AppSetting",
     "Indicator", "CheckItem", "Regulation", "AuditUnit",
     "AuditTask", "Material", "Finding",
+    "Worksheet", "WorksheetRow",
 ]

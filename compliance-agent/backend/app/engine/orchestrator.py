@@ -208,6 +208,13 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
         task.summary = _build_summary(stats, llm_available)
         task.status = "ai_done"
         task.completed_at = datetime.utcnow()
+
+        # 生成工作底稿草案（V1：AI 阅卷产物）
+        from app.services.worksheet_service import build_worksheet_draft
+        try:
+            build_worksheet_draft(db, task)
+        except Exception as exc:
+            print(f"[worksheet] 底稿生成失败: {exc}")
     except Exception as exc:
         task.status = "failed"
         task.summary = f"核查失败：{exc}"

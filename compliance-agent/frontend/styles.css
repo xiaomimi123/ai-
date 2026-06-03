@@ -385,6 +385,29 @@ button { font-family: inherit; }
 .btn-sm svg { display: block; }
 .btn:active { transform: scale(0.98); }
 
+/* === 工作底稿：7 对复选框徽章 === */
+.ws-flag {
+  display: inline-block;
+  padding: 2px 7px;
+  margin: 1px 3px 1px 0;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 500;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.ws-flag-ok  { background: #e8f5ee; color: #1f7a3e; border-color: #c9e8d3; }
+.ws-flag-bad { background: #fdecec; color: #b8262b; border-color: #f2c0c2; }
+.ws-flag-na  { background: #f0f2f5; color: #888;    border-color: #dde0e4; }
+.table-compact th, .table-compact td {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  vertical-align: top;
+}
+.text-xs { font-size: 11px; }
+
 .btn-primary {
   background: var(--blue);
   color: white;
