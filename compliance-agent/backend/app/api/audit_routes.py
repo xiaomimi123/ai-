@@ -309,11 +309,157 @@ def rebuild_task_worksheet(task_id: int,
         raise HTTPException(404, "任务不存在")
     if not _user_can_see_task(user, task):
         raise HTTPException(403, "无权操作")
+    ws = get_worksheet(db, task_id)
+    if ws and ws.status == "finalized":
+        raise HTTPException(400, "底稿已定稿，请先解锁后再重建")
     ws = build_worksheet_draft(db, task)
     log_action(db, user, "worksheet.rebuild",
                target_type="task", target_id=task.id,
                detail=f"重建工作底稿 行数={len(ws.rows)}")
     db.commit()
+    return ws
+
+
+# ============================================================
+# V2：在线编辑 + 定稿状态机
+# ============================================================
+class WorksheetRowPatch(BaseModel):
+    audited_score: Optional[float] = None
+    audit_finding_text: Optional[str] = None
+    material_flags: Optional[dict] = None
+    unit_name: Optional[str] = None
+    unit_code: Optional[str] = None
+    auditor_name: Optional[str] = None
+    reviewer_name: Optional[str] = None
+
+
+@tasks_router.patch("/{task_id}/worksheet/rows/{row_id}")
+def patch_worksheet_row(task_id: int, row_id: int,
+                        req: WorksheetRowPatch,
+                        db: Session = Depends(get_db),
+                        user: User = Depends(require_auditor)):
+    """编辑底稿单元格：核查后得分 / 核查情况说明 / 7 对 14 项复选框。
+
+    finalized 状态拒绝（必须先解锁）。
+    """
+    from app.models import WorksheetRow
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权操作此任务")
+    row = db.get(WorksheetRow, row_id)
+    if not row:
+        raise HTTPException(404, "底稿行不存在")
+    ws = get_worksheet(db, task_id)
+    if not ws or row.worksheet_id != ws.id:
+        raise HTTPException(404, "底稿行不属于此任务")
+    if ws.status == "finalized":
+        raise HTTPException(400, "底稿已定稿，请先解锁再编辑")
+
+    changes: list[str] = []
+    if req.audited_score is not None:
+        try:
+            v = float(req.audited_score)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "audited_score 必须是数字")
+        max_sc = float(row.indicator.max_score) if row.indicator else None
+        if max_sc is not None and (v < 0 or v > max_sc):
+            raise HTTPException(400, f"audited_score 必须在 [0, {max_sc}] 之间")
+        if abs(row.audited_score - v) > 1e-9:
+            changes.append(f"audited_score {row.audited_score} → {v}")
+            row.audited_score = v
+    if req.audit_finding_text is not None:
+        if row.audit_finding_text != req.audit_finding_text:
+            changes.append("audit_finding_text 已更新")
+            row.audit_finding_text = req.audit_finding_text[:2000]
+    if req.material_flags is not None:
+        import json as _json
+        new_flags = _json.dumps(req.material_flags, ensure_ascii=False)
+        if row.material_flags != new_flags:
+            changes.append("material_flags 已更新")
+            row.material_flags = new_flags
+
+    # 同时支持改底稿元数据（unit_name 等）
+    if any(x is not None for x in (req.unit_name, req.unit_code,
+                                   req.auditor_name, req.reviewer_name)):
+        if req.unit_name is not None:
+            ws.unit_name = req.unit_name[:256]
+        if req.unit_code is not None:
+            ws.unit_code = req.unit_code[:64]
+        if req.auditor_name is not None:
+            ws.auditor_name = req.auditor_name[:64]
+        if req.reviewer_name is not None:
+            ws.reviewer_name = req.reviewer_name[:64]
+        changes.append("底稿元数据已更新")
+
+    # 首次编辑时把底稿状态升到 reviewing
+    if ws.status == "draft" and changes:
+        ws.status = "reviewing"
+
+    if changes:
+        log_action(db, user, "worksheet.row.edit",
+                   target_type="worksheet_row", target_id=row.id,
+                   detail=f"任务 #{task_id} 行 #{row.serial}：" + "；".join(changes))
+        db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id, "serial": row.serial,
+        "audited_score": row.audited_score,
+        "audit_finding_text": row.audit_finding_text,
+        "material_flags": row.material_flags,
+        "worksheet_status": ws.status,
+    }
+
+
+@tasks_router.post("/{task_id}/worksheet/finalize", response_model=WorksheetOut)
+def finalize_worksheet(task_id: int,
+                       db: Session = Depends(get_db),
+                       user: User = Depends(require_auditor)):
+    """定稿底稿：锁定为只读，禁止再编辑单元格。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权操作")
+    ws = get_worksheet(db, task_id)
+    if not ws:
+        raise HTTPException(404, "底稿不存在")
+    if ws.status == "finalized":
+        return ws  # 幂等
+    ws.status = "finalized"
+    # 同步任务状态
+    if task.status in ("ai_done", "reviewing"):
+        task.status = "finalized"
+    log_action(db, user, "worksheet.finalize",
+               target_type="task", target_id=task.id,
+               detail="底稿定稿")
+    db.commit(); db.refresh(ws)
+    return ws
+
+
+@tasks_router.post("/{task_id}/worksheet/unlock", response_model=WorksheetOut)
+def unlock_worksheet(task_id: int,
+                     db: Session = Depends(get_db),
+                     user: User = Depends(require_auditor)):
+    """解锁底稿（仅超级管理员）→ 回到 reviewing 状态可继续编辑。"""
+    if not is_admin(user.role):
+        raise HTTPException(403, "仅超级管理员可解锁定稿底稿")
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    ws = get_worksheet(db, task_id)
+    if not ws:
+        raise HTTPException(404, "底稿不存在")
+    if ws.status != "finalized":
+        return ws
+    ws.status = "reviewing"
+    if task.status == "finalized":
+        task.status = "reviewing"
+    log_action(db, user, "worksheet.unlock",
+               target_type="task", target_id=task.id,
+               detail="解锁底稿")
+    db.commit(); db.refresh(ws)
     return ws
 
 

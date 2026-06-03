@@ -18,7 +18,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import AuditTask, AuditUnit, Finding, Indicator, Material
+from app.models import AuditTask, AuditUnit, Finding, Indicator, Material, Worksheet, WorksheetRow
 from app.services.scoring_service import compute_task_scoring
 
 
@@ -33,6 +33,16 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
     materials: List[Material] = list(task.materials)
     findings: List[Finding] = list(task.findings)
     scoring = compute_task_scoring(db, task)
+
+    # 拉工作底稿（V2：审计师在底稿编辑的内容会注入报告）
+    worksheet: Optional[Worksheet] = (
+        db.query(Worksheet).filter(Worksheet.task_id == task.id).first()
+    )
+    ws_rows_by_ind: dict[int, WorksheetRow] = {}
+    if worksheet:
+        for row in worksheet.rows:
+            if row.indicator_id:
+                ws_rows_by_ind[row.indicator_id] = row
 
     doc = Document()
 
@@ -292,9 +302,18 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
             _h(f"指标 {ind.indicator_code} · {ind.name}{score_suffix}", level=2, size=13)
             _label_value("分类", f"{ind.level} / {ind.category} / {ind.subcategory}")
             _label_value("满分", str(ind.max_score))
-            if ind_score:
-                _label_value("扣分", f"{ind_score['deducted']} 分")
-                _label_value("实际得分", f"{ind_score['actual_score']} 分")
+
+            # V2：优先用工作底稿的审计师评分 / 评语
+            ws_row = ws_rows_by_ind.get(ind.id)
+            if ws_row:
+                _label_value("核查前得分（自评）", f"{ws_row.original_score} 分")
+                _label_value("核查后得分（复核）", f"{ws_row.audited_score} 分")
+                if ws_row.audit_finding_text:
+                    _label_value("审计师评语", ws_row.audit_finding_text)
+            else:
+                if ind_score:
+                    _label_value("扣分", f"{ind_score['deducted']} 分")
+                    _label_value("实际得分", f"{ind_score['actual_score']} 分")
             _label_value("问题数", f"{len(ind_findings)} 条")
             doc.add_paragraph()
 

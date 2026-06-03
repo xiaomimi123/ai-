@@ -693,7 +693,7 @@ async function loadWorksheet() {
 
   let ws;
   try {
-    ws = await api(`/api/tasks/${State.taskId}/worksheet`);
+    ws = await api(`/tasks/${State.taskId}/worksheet`);
   } catch (e) {
     body.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding:24px">底稿尚未生成。请先在"材料"标签页触发 AI 核查。</td></tr>`;
     return;
@@ -702,8 +702,10 @@ async function loadWorksheet() {
   document.getElementById("tw-count-worksheet").textContent = ws.rows.length;
 
   // 用指标库 id→name/category 映射
-  const inds = await api(`/api/indicators`);
+  const inds = await api(`/indicators`);
   const indMap = new Map(inds.map(i => [i.id, i]));
+
+  const isLocked = ws.status === "finalized";
 
   let totMax = 0, totBefore = 0, totAfter = 0;
   body.innerHTML = ws.rows.map(r => {
@@ -713,28 +715,191 @@ async function loadWorksheet() {
     totAfter += r.audited_score || 0;
     const flags = (() => { try { return JSON.parse(r.material_flags || "{}"); } catch { return {}; } })();
     const cat = ind.subcategory ? `${ind.category}<br/><span class="text-xs text-muted">${ind.subcategory}</span>` : (ind.category || "");
+    const max = +ind.max_score || 0;
+
+    // 可编辑：得分 number input；说明 textarea；复选框 checkbox 单点切换
+    const scoreInput = isLocked
+      ? `<strong>${(r.audited_score ?? 0).toFixed(2)}</strong>`
+      : `<input type="number" min="0" max="${max}" step="0.25" value="${(r.audited_score ?? 0).toFixed(2)}"
+            class="ws-cell-edit ws-score" data-row-id="${r.id}" data-max="${max}"
+            style="width:64px;text-align:center;padding:4px;font-weight:600" />`;
+    const textInput = isLocked
+      ? `<div class="ws-cell-readonly">${escapeHtml(r.audit_finding_text || "")}</div>`
+      : `<textarea class="ws-cell-edit ws-note" data-row-id="${r.id}"
+            rows="3" style="width:100%;min-width:240px;padding:6px;font-size:12px;resize:vertical">${escapeHtml(r.audit_finding_text || "")}</textarea>`;
+
     return `
-      <tr>
+      <tr data-row-id="${r.id}">
         <td class="text-center text-muted">${r.serial}</td>
         <td class="text-sm">${cat}</td>
         <td>${escapeHtml(ind.name || "")}</td>
         <td class="text-center">${ind.max_score ?? ""}</td>
         <td class="text-center">${(r.original_score ?? 0).toFixed(2)}</td>
-        <td class="text-center"><strong>${(r.audited_score ?? 0).toFixed(2)}</strong></td>
-        <td class="text-sm">${escapeHtml(r.audit_finding_text || "")}</td>
-        <td>${renderFlagBadges(flags)}</td>
+        <td class="text-center">${scoreInput}</td>
+        <td class="text-sm">${textInput}</td>
+        <td>${renderEditableFlags(flags, r.id, isLocked)}</td>
       </tr>
     `;
   }).join("");
 
   document.getElementById("ws-summary").innerHTML = `
     <span><span class="text-muted">单位：</span><strong>${escapeHtml(ws.unit_name || "—")}</strong></span>
-    <span><span class="text-muted">底稿状态：</span><strong>${ws.status}</strong></span>
+    <span><span class="text-muted">底稿状态：</span>${renderWorksheetStatusBadge(ws.status)}</span>
     <span><span class="text-muted">标准分合计：</span><strong>${totMax.toFixed(0)}</strong></span>
     <span><span class="text-muted">核查前合计：</span><strong>${totBefore.toFixed(2)}</strong></span>
-    <span><span class="text-muted">核查后合计：</span><strong style="color:var(--brand-red)">${totAfter.toFixed(2)}</strong></span>
+    <span><span class="text-muted">核查后合计：</span><strong style="color:var(--brand-red)" id="ws-total-after">${totAfter.toFixed(2)}</strong></span>
+    <span class="ws-save-toast" id="ws-save-toast" style="margin-left:auto"></span>
   `;
+  bindWorksheetCellEditors(isLocked);
+  renderWorksheetActions(ws);
 }
+
+function renderWorksheetStatusBadge(status) {
+  const map = {
+    draft:      ['#fff3cd', '#856404', '草稿（AI 生成）'],
+    reviewing:  ['#e3f2fd', '#1565c0', '复核中'],
+    finalized:  ['#e8f5ee', '#1f7a3e', '已定稿'],
+  };
+  const [bg, fg, label] = map[status] || ['#eee', '#666', status];
+  return `<span style="background:${bg};color:${fg};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">${label}</span>`;
+}
+
+function renderEditableFlags(flags, rowId, locked) {
+  // 7 对 14 项，每对显示为「正向 / 负向」两个 chip 可点切换
+  return WS_FLAG_PAIRS.map(([pk, pl, nk, nl]) => {
+    const pos = !!flags[pk], neg = !!flags[nk];
+    const posClass = pos ? "ws-flag ws-flag-ok" : "ws-flag ws-flag-na";
+    const negClass = neg ? "ws-flag ws-flag-bad" : "ws-flag ws-flag-na";
+    const click = locked ? "" : `onclick="toggleFlag(${rowId}, '${pk}', '${nk}', '${pk}')"`;
+    const clickN = locked ? "" : `onclick="toggleFlag(${rowId}, '${pk}', '${nk}', '${nk}')"`;
+    const cur = locked ? "" : ";cursor:pointer";
+    return `<span class="${posClass}" style="user-select:none${cur}" ${click}>${pl}</span><span class="${negClass}" style="user-select:none${cur}" ${clickN}>${nl}</span>`;
+  }).join("");
+}
+
+window.toggleFlag = async function(rowId, posKey, negKey, clicked) {
+  const row = State.worksheet.rows.find(r => r.id === rowId);
+  if (!row) return;
+  let flags = {};
+  try { flags = JSON.parse(row.material_flags || "{}"); } catch {}
+  // 点正向：正向 = !正向；如果点开正向则关闭负向（互斥）
+  if (clicked === posKey) {
+    flags[posKey] = !flags[posKey];
+    if (flags[posKey]) flags[negKey] = false;
+  } else {
+    flags[negKey] = !flags[negKey];
+    if (flags[negKey]) flags[posKey] = false;
+  }
+  row.material_flags = JSON.stringify(flags);
+  await saveWorksheetRow(rowId, { material_flags: flags });
+  await loadWorksheet();
+};
+
+let _wsSaveTimer = null;
+function bindWorksheetCellEditors(locked) {
+  if (locked) return;
+  document.querySelectorAll(".ws-cell-edit").forEach(el => {
+    el.addEventListener("blur", async () => {
+      const rowId = parseInt(el.dataset.rowId);
+      if (el.classList.contains("ws-score")) {
+        const v = parseFloat(el.value);
+        const max = parseFloat(el.dataset.max);
+        if (isNaN(v) || v < 0 || v > max) {
+          showSaveToast(`✗ 得分必须在 0-${max}`, "error");
+          await loadWorksheet();
+          return;
+        }
+        await saveWorksheetRow(rowId, { audited_score: v });
+      } else if (el.classList.contains("ws-note")) {
+        await saveWorksheetRow(rowId, { audit_finding_text: el.value });
+      }
+    });
+  });
+}
+
+async function saveWorksheetRow(rowId, payload) {
+  try {
+    showSaveToast("保存中…", "info");
+    const res = await api(`/tasks/${State.taskId}/worksheet/rows/${rowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    showSaveToast("✓ 已保存", "ok");
+    // 状态可能从 draft → reviewing
+    if (State.worksheet && State.worksheet.status !== res.worksheet_status) {
+      State.worksheet.status = res.worksheet_status;
+      const node = document.querySelector("#ws-summary");
+      if (node) {
+        // 局部刷新状态徽章
+        const span = node.children[1];
+        if (span) span.innerHTML = `<span class="text-muted">底稿状态：</span>${renderWorksheetStatusBadge(res.worksheet_status)}`;
+      }
+      renderWorksheetActions(State.worksheet);
+    }
+    // 更新本地缓存
+    const row = State.worksheet?.rows?.find(r => r.id === rowId);
+    if (row) {
+      if (payload.audited_score !== undefined) row.audited_score = res.audited_score;
+      if (payload.audit_finding_text !== undefined) row.audit_finding_text = res.audit_finding_text;
+      if (payload.material_flags !== undefined) row.material_flags = res.material_flags;
+      // 重算合计
+      const tot = State.worksheet.rows.reduce((a, r) => a + (r.audited_score || 0), 0);
+      const totalEl = document.getElementById("ws-total-after");
+      if (totalEl) totalEl.textContent = tot.toFixed(2);
+    }
+  } catch (e) {
+    showSaveToast("✗ " + e.message, "error");
+  }
+}
+
+function showSaveToast(text, kind) {
+  const el = document.getElementById("ws-save-toast");
+  if (!el) return;
+  const colors = { info: "#666", ok: "#1f7a3e", error: "#b8262b" };
+  el.style.color = colors[kind] || "#666";
+  el.textContent = text;
+  if (_wsSaveTimer) clearTimeout(_wsSaveTimer);
+  _wsSaveTimer = setTimeout(() => { el.textContent = ""; }, 2500);
+}
+
+function renderWorksheetActions(ws) {
+  const bar = document.getElementById("ws-action-bar");
+  if (!bar) return;
+  const acts = [];
+  if (ws.status !== "finalized") {
+    acts.push(`<button class="btn btn-secondary btn-sm" id="ws-rebuild-btn"><span data-icon="refresh"></span><span>重新生成</span></button>`);
+    acts.push(`<button class="btn btn-primary btn-sm" id="ws-download-btn"><span data-icon="download"></span><span>下载 Excel</span></button>`);
+    acts.push(`<button class="btn btn-success btn-sm" onclick="finalizeWorksheet()"><span data-icon="check"></span><span>完成复核，定稿</span></button>`);
+  } else {
+    acts.push(`<span style="color:#1f7a3e;font-size:13px;font-weight:600">🔒 已定稿（只读）</span>`);
+    acts.push(`<button class="btn btn-primary btn-sm" id="ws-download-btn"><span data-icon="download"></span><span>下载 Excel</span></button>`);
+    if (State.user && State.user.role === "super_admin") {
+      acts.push(`<button class="btn btn-danger-ghost btn-sm" onclick="unlockWorksheet()">解锁底稿</button>`);
+    }
+  }
+  bar.innerHTML = acts.join("");
+}
+
+window.finalizeWorksheet = async function() {
+  if (!confirm("定稿后底稿将变为只读，不能再编辑单元格。\n\n确定定稿吗？")) return;
+  try {
+    const ws = await api(`/tasks/${State.taskId}/worksheet/finalize`, { method: "POST" });
+    State.worksheet = ws;
+    toast("✓ 底稿已定稿", "success");
+    await loadWorksheet();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+window.unlockWorksheet = async function() {
+  if (!confirm("解锁后底稿可继续编辑，且原定稿状态会丢失。\n\n确定解锁吗？")) return;
+  try {
+    const ws = await api(`/tasks/${State.taskId}/worksheet/unlock`, { method: "POST" });
+    State.worksheet = ws;
+    toast("✓ 底稿已解锁，可继续编辑", "success");
+    await loadWorksheet();
+  } catch (e) { toast(e.message, "error"); }
+};
 
 function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -760,7 +925,7 @@ document.addEventListener("click", async (e) => {
   if (e.target.closest("#ws-rebuild-btn")) {
     if (!confirm("根据当前 Finding 状态重新生成底稿？现有底稿会被覆盖。")) return;
     try {
-      await api(`/api/tasks/${State.taskId}/worksheet/rebuild`, { method: "POST" });
+      await api(`/tasks/${State.taskId}/worksheet/rebuild`, { method: "POST" });
       await loadWorksheet();
     } catch (err) {
       alert("重建失败：" + err.message);
