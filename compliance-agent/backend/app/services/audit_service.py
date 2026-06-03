@@ -111,6 +111,15 @@ def upload_material(db: Session, task: AuditTask, *,
         if not indicator:
             raise HTTPException(404, f"指标 {indicator_id} 不存在")
 
+    # 自动按文件名/路径关键词绑定到指标（仅当未显式指定时）
+    if not indicator_id:
+        from app.services.material_matcher import match_indicator
+        all_inds = db.query(Indicator).all()
+        auto = match_indicator(file_name, all_inds)
+        if auto:
+            indicator_id = auto.id
+            indicator = auto
+
     # 跨任务材料查重指纹：MD5(原始字节) + MD5(前 5000 字解析文本归一化)
     import hashlib, re as _re
     content_hash = hashlib.md5(content).hexdigest()
@@ -136,6 +145,45 @@ def upload_material(db: Session, task: AuditTask, *,
                       f"指标={indicator.indicator_code if indicator else '未绑定'}")
     db.commit(); db.refresh(material)
     return material
+
+
+# ============================================================
+# 材料批量自动绑定（用于旧任务一键修复 / 用户主动重算）
+# ============================================================
+def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = None) -> dict:
+    """对任务下未绑定指标的材料做批量自动绑定。
+
+    返回 {checked, bound_now, still_unbound, samples}：
+    - checked: 处理的材料数
+    - bound_now: 本次新绑定的数量
+    - still_unbound: 仍未能绑定的数量（关键词命中不唯一或完全没命中）
+    - samples: 前 5 条新绑定示例 [{file, indicator_code}]
+    """
+    from app.services.material_matcher import match_indicator
+    indicators = db.query(Indicator).all()
+    checked = bound = 0
+    samples = []
+    for m in task.materials:
+        if m.indicator_id:
+            continue
+        checked += 1
+        ind = match_indicator(m.file_name, indicators)
+        if ind:
+            m.indicator_id = ind.id
+            bound += 1
+            if len(samples) < 5:
+                samples.append({"file": m.file_name[:60], "indicator_code": ind.indicator_code})
+    if bound:
+        log_action(db, user, "material.auto_bind",
+                   target_type="task", target_id=task.id,
+                   detail=f"自动绑定 {bound}/{checked} 份材料到指标")
+    db.commit()
+    return {
+        "checked": checked,
+        "bound_now": bound,
+        "still_unbound": checked - bound,
+        "samples": samples,
+    }
 
 
 # ============================================================

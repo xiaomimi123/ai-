@@ -91,14 +91,21 @@ def _resolve_target_indicators(db: Session, task: AuditTask) -> List[Indicator]:
 
 def _materials_for_indicator(materials: List[Material], indicator: Indicator) -> List[Material]:
     """为某个指标筛选关联材料：
-    - 显式绑定到该指标的材料优先
-    - 没有任何材料绑定该指标时，所有未绑定指标的材料都参与（共享池）
+    1) 显式绑定该指标的材料优先（最强信号）
+    2) 未绑定材料按文件名/路径关键词命中本指标 subcategory → 子集参与
+    3) 都没有 → 返回空，orchestrator 会记一条"缺失材料"warning（不再调 LLM）
+
+    设计取舍：不走共享池兜底（旧行为）——那会导致 23 份材料 × 55 指标 = 1265 次
+    LLM 调用的爆炸。宁可让 17 个组织层面指标标"未上传"，也比 3 小时核查强。
     """
     bound = [m for m in materials if m.indicator_id == indicator.id]
     if bound:
         return bound
+    from app.services.material_matcher import filter_materials_by_subcategory
     unbound = [m for m in materials if not m.indicator_id]
-    return unbound
+    if not unbound:
+        return []
+    return filter_materials_by_subcategory(unbound, indicator)
 
 
 def run_audit(db: Session, task: AuditTask) -> AuditTask:

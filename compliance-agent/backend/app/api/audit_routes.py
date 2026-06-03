@@ -151,6 +151,19 @@ async def upload_material(
     return material
 
 
+@tasks_router.post("/{task_id}/materials/auto-bind")
+def auto_bind_materials(task_id: int,
+                        db: Session = Depends(get_db),
+                        user: User = Depends(require_auditor)):
+    """对未绑定指标的材料按文件名关键词批量自动绑定。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权操作此任务")
+    return audit_service.auto_bind_materials(db, task, user)
+
+
 @tasks_router.post("/{task_id}/run", response_model=AuditTaskOut)
 def run_task(task_id: int,
              db: Session = Depends(get_db),

@@ -1,0 +1,190 @@
+"""材料 → 指标 智能匹配（基于文件名 / 路径的关键词反查）。
+
+应用场景：
+1. 文件夹批量上传时，材料无显式绑定 → 用本模块自动绑定到指标
+2. orchestrator 跑核查时，未绑定材料按子类筛选只送给"相关指标"
+   避免共享池 N × 55 的 LLM 调用爆炸
+
+匹配两层：
+- **subcategory 级**：根据文件路径里的「（一）」「预算」等关键词，定位到所属
+  子类（一共 9 个：组织层面 / 6 个业务子类 / 内部监督 / 补充指标）
+- **indicator 级**：在子类内根据指标名关键词（"三重一大"、"轮岗"、"票据"…）
+  二次匹配到唯一指标；找不到唯一就回退到子类层
+
+设计原则：匹配不到就 None（不强行绑定，保留共享池兜底）。
+"""
+from __future__ import annotations
+
+import re
+from typing import Iterable, List, Optional
+
+from app.models import Indicator
+
+
+# ============================================================
+# 子类关键词字典（路径里出现任一即视为命中）
+# 顺序很重要：业务子类前缀比"组织层面"等宽泛词更优先
+# ============================================================
+SUBCATEGORY_HINTS: list[tuple[str, list[str]]] = [
+    # (subcategory_canonical_name, [关键词列表])
+    ("（一）预算业务控制",        ["（一）", "(一)", "预算业务", "预算管理", "预算"]),
+    ("（二）收支业务控制",        ["（二）", "(二)", "收支业务", "收支管理", "收支", "票据"]),
+    ("（三）政府采购业务控制",     ["（三）", "(三)", "政府采购", "采购业务", "采购管理", "采购"]),
+    ("（四）资产控制",            ["（四）", "(四)", "资产控制", "资产管理", "资产", "印章", "账户", "盘点"]),
+    ("（五）建设项目控制",        ["（五）", "(五)", "建设项目", "工程项目", "基建", "项目管理"]),
+    ("（六）合同控制",            ["（六）", "(六)", "合同管理", "合同控制", "合同"]),
+    ("内部监督",                  ["内部监督", "监督检查", "内控检查", "整改"]),
+    ("补充指标",                  ["补充指标", "其他"]),
+    # 组织层面放最后兜底（"组织"在很多路径里都可能出现）
+    ("组织层面内部控制",          ["组织层面", "三重一大", "分事行权", "分岗设权", "分级授权",
+                                  "轮岗", "内控组织", "组织架构", "内控会议", "会计核算",
+                                  "信息化", "信息系统"]),
+]
+
+
+# ============================================================
+# 指标级关键词（一对一精准匹配，仅当唯一命中才绑定）
+# 同一关键词只能出现在一条指标上，否则会冲突
+# ============================================================
+INDICATOR_HINTS: dict[str, list[str]] = {
+    # 组织层面
+    "I-01": ["三重一大决策制度", "三重一大制度", "三重一大机制"],
+    "I-02": ["三重一大会议纪要", "三重一大执行"],
+    "I-03": ["分事行权", "决策执行监督"],
+    "I-04": ["分岗设权", "岗位说明书"],
+    "I-05": ["分级授权", "审批权限"],
+    "I-06": ["轮岗制度"],
+    "I-07": ["轮岗执行", "轮岗记录"],
+    "I-08": ["内控组织架构", "内控领导小组"],
+    "I-09": ["内控会议", "内控专题会"],
+    "I-10": ["会计核算", "会计科目", "财务报告"],
+    "I-11": ["信息化覆盖", "信息化建设"],
+    "I-12": ["信息系统管控", "运维管理", "系统安全"],
+
+    # 预算
+    "I-13": ["预算管理制度", "预算制度"],
+    "I-15": ["预算编制"],
+    "I-16": ["预算执行", "预算公开"],
+    "I-17": ["预算预警", "预算整改"],
+    "I-18": ["决算"],
+    "I-19": ["预算绩效", "绩效管理"],
+
+    # 收支
+    "I-20": ["收支管理制度", "收支制度"],
+    "I-22": ["收入管理", "收入凭证", "收入台账"],
+    "I-23": ["票据管理", "票据台账"],
+    "I-24": ["支出管理", "支出审批"],
+
+    # 采购
+    "I-25": ["采购管理制度", "采购制度"],
+    "I-27": ["采购预算", "采购计划"],
+    "I-28": ["采购方式"],
+    "I-29": ["采购变更", "变更审批"],
+    "I-30": ["采购信息公开", "中标公告"],
+    "I-31": ["履约验收", "采购验收"],
+
+    # 资产
+    "I-32": ["资产管理制度"],
+    "I-34": ["印章管理", "账户管理"],
+    "I-35": ["资产盘点", "银行存款余额调节表"],
+    "I-36": ["资产处置", "资产配置"],
+
+    # 建设项目
+    "I-37": ["建设项目管理制度", "项目管理制度"],
+    "I-39": ["可行性研究", "可研报告", "项目决策"],
+    "I-40": ["项目评审", "评审意见"],
+    "I-41": ["工程变更"],
+    "I-42": ["资金专款", "专款专用"],
+    "I-43": ["竣工验收", "资产交付", "竣工决算"],
+
+    # 合同
+    "I-44": ["合同管理制度"],
+    "I-46": ["合同归口管理"],
+    "I-47": ["合同订立", "合同审批"],
+    "I-48": ["合同履行监督", "合同跟踪"],
+    "I-49": ["合同台账"],
+    "I-50": ["合同印章"],
+
+    # 内部监督
+    "I-52": ["内部会计监督"],
+    "I-53": ["内控检查报告", "内控自查"],
+    "I-54": ["问题整改", "整改台账"],
+
+    # 补充
+    "I-55": ["补充指标"],
+}
+
+
+def _normalize(s: str) -> str:
+    """统一全/半角括号、去多余空白，便于匹配。"""
+    return (s or "").replace("(", "（").replace(")", "）").strip()
+
+
+def match_subcategory(file_name: str) -> Optional[str]:
+    """返回 subcategory 规范名（如「（一）预算业务控制」），找不到返回 None。"""
+    s = _normalize(file_name)
+    if not s:
+        return None
+    for canonical, kws in SUBCATEGORY_HINTS:
+        for kw in kws:
+            if kw in s:
+                return canonical
+    return None
+
+
+def match_indicator(file_name: str,
+                    indicators: Iterable[Indicator]) -> Optional[Indicator]:
+    """精准匹配单个指标。
+
+    规则：
+    - 必须先命中所属子类（防"合同"误绑到"采购合同"）
+    - 在子类内用 INDICATOR_HINTS 关键词命中
+    - 唯一命中才返回；多个命中返回 None
+    """
+    s = _normalize(file_name)
+    if not s:
+        return None
+
+    sub = match_subcategory(s)
+    if not sub:
+        return None
+
+    # 候选指标：subcategory 匹配 + 兼容组织层面/内部监督等 category-only 情况
+    candidates: List[Indicator] = []
+    for ind in indicators:
+        ind_sub = ind.subcategory or ind.category or ""
+        if _normalize(ind_sub) == sub:
+            candidates.append(ind)
+    if not candidates:
+        return None
+
+    # 在候选指标里用关键词命中
+    hits = []
+    for ind in candidates:
+        kws = INDICATOR_HINTS.get(ind.indicator_code, [])
+        # 兜底：用指标 name 本身的 2-4 字关键词
+        if not kws and ind.name:
+            kws = [ind.name]
+        for kw in kws:
+            if kw and kw in s:
+                hits.append(ind)
+                break
+
+    if len(hits) == 1:
+        return hits[0]
+    return None
+
+
+def filter_materials_by_subcategory(materials: list,
+                                    indicator: Indicator) -> list:
+    """从材料列表中筛出与指标"子类相关"的（用于 orchestrator 共享池退化）。"""
+    target = _normalize(indicator.subcategory or indicator.category or "")
+    if not target:
+        return materials
+    out = []
+    for m in materials:
+        s = _normalize((m.file_name or ""))
+        sub = match_subcategory(s)
+        if sub and _normalize(sub) == target:
+            out.append(m)
+    return out
