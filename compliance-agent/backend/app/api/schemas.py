@@ -41,6 +41,15 @@ class CreateUserRequest(BaseModel):
     unit_id: Optional[int] = None
 
 
+class PasswordChangeRequest(BaseModel):
+    new_password: str
+    old_password: Optional[str] = None  # 非管理员改自己时必填
+
+
+class SetActiveRequest(BaseModel):
+    active: bool
+
+
 class AuditLogOut(BaseModel):
     id: int
     username: str

@@ -2110,15 +2110,115 @@ async function loadSystemInfo() {
 // 用户
 async function loadUsers() {
   const users = await api("/users");
-  document.getElementById("users-tbody").innerHTML = users.map(u => `
-    <tr>
+  const meId = State.user && State.user.id;
+  document.getElementById("users-tbody").innerHTML = users.map(u => {
+    const isSelf = u.id === meId;
+    const isDeleted = u.username.startsWith("deleted_");
+    const activeBadge = u.is_active
+      ? '<span class="badge badge-green">启用</span>'
+      : (isDeleted ? '<span class="badge badge-red">已删除</span>' : '<span class="badge badge-gray">停用</span>');
+    const actions = [];
+    actions.push(`<button class="btn btn-ghost btn-sm" onclick="openChangePwd(${u.id}, '${esc(u.username)}')" title="改密码">🔑</button>`);
+    if (!isSelf && !isDeleted) {
+      if (u.is_active) {
+        actions.push(`<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(${u.id}, false)" title="停用">⏸</button>`);
+      } else {
+        actions.push(`<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(${u.id}, true)" title="启用">▶</button>`);
+      }
+      actions.push(`<button class="btn btn-danger-ghost btn-sm" onclick="deleteUser(${u.id}, '${esc(u.username)}')" title="软删">✕</button>`);
+    }
+    return `<tr>
       <td><span class="code-id">#${pad(u.id)}</span></td>
-      <td style="font-weight:500">${esc(u.username)}</td>
+      <td style="font-weight:500">${esc(u.username)}${isSelf ? ' <span class="text-xs text-faint">(你)</span>' : ''}</td>
       <td>${roleBadge(u.role)}</td>
       <td>${esc(u.full_name || "—")}</td>
-      <td>${u.is_active ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-gray">停用</span>'}</td>
-    </tr>`).join("") || `<tr><td colspan="5" class="empty-state">暂无用户</td></tr>`;
+      <td>${activeBadge}</td>
+      <td class="text-right" style="white-space:nowrap">${actions.join(" ")}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="6" class="empty-state">暂无用户</td></tr>`;
 }
+
+// 改密码 / 启停 / 删除 — 全局处理器
+window.openChangePwd = function(userId, username) {
+  const isSelf = State.user && State.user.id === userId;
+  const isAdmin = State.user && State.user.role === "super_admin";
+  const needOld = !isAdmin && isSelf;
+  const modal = document.getElementById("pwd-modal");
+  document.getElementById("pwd-title").textContent =
+    isSelf ? "修改我的密码" : `重置 ${username} 的密码`;
+  document.getElementById("pwd-target-id").value = userId;
+  document.getElementById("pwd-form").reset();
+  document.getElementById("pwd-old-row").style.display = needOld ? "" : "none";
+  document.getElementById("pwd-status").innerHTML = "";
+  document.getElementById("pwd-old-input").required = needOld;
+  modal.classList.remove("hidden");
+};
+
+window.toggleUserActive = async function(userId, active) {
+  const verb = active ? "启用" : "停用";
+  if (!confirm(`确定${verb}此用户？\n${active ? "" : "停用后该用户当前登录态将立即失效。"}`)) return;
+  try {
+    await api(`/users/${userId}/activate`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active }),
+    });
+    toast(`✓ 已${verb}`, "success");
+    loadUsers();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+window.deleteUser = async function(userId, username) {
+  if (!confirm(`确定删除用户 ${username}？\n\n· 软删（操作日志中保留）\n· 该用户立即无法登录\n· 用户名会加 deleted_ 前缀\n\n此操作不可恢复。`)) return;
+  try {
+    await api(`/users/${userId}`, { method: "DELETE" });
+    toast("✓ 用户已删除", "success");
+    loadUsers();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+// 改密码表单提交
+document.getElementById("pwd-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const fd = new FormData(ev.target);
+  const userId = parseInt(document.getElementById("pwd-target-id").value);
+  const newPwd = fd.get("new_password");
+  const confirmPwd = fd.get("new_password_confirm");
+  const oldPwd = fd.get("old_password");
+  const status = document.getElementById("pwd-status");
+
+  if (newPwd !== confirmPwd) {
+    status.innerHTML = `<div class="callout callout-warn">两次输入的新密码不一致</div>`;
+    return;
+  }
+  if (newPwd.length < 6) {
+    status.innerHTML = `<div class="callout callout-warn">密码至少 6 位</div>`;
+    return;
+  }
+
+  try {
+    const payload = { new_password: newPwd };
+    if (oldPwd) payload.old_password = oldPwd;
+    await api(`/users/${userId}/password`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    document.getElementById("pwd-modal").classList.add("hidden");
+    const isSelf = State.user && State.user.id === userId;
+    toast(`✓ 密码已修改${isSelf ? "，请重新登录" : ""}`, "success");
+    if (isSelf) {
+      // 改自己密码 → token 已被吊销 → 退出
+      setToken(""); State.user = null;
+      setTimeout(() => showLogin("密码已修改，请用新密码登录"), 500);
+    } else {
+      // 改别人的密码（管理员场景）→ 刷新用户列表
+      if (typeof loadUsers === "function") loadUsers();
+    }
+  } catch (e) {
+    status.innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
+  }
+});
 
 function roleBadge(r) {
   const map = {
@@ -2223,12 +2323,20 @@ function renderUserCard() {
         <div class="user-name">${esc(name)}</div>
         <div class="user-role">${esc(State.roleLabel)}</div>
       </div>
+      <button class="btn-logout-icon" id="btn-changepwd" title="改密码">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M5 7V5a3 3 0 0 1 6 0v2 M3 7h10v6H3z M8 9v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
       <button class="btn-logout-icon" id="btn-logout" title="登出">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M6 3H3v10h3 M11 11l3-3-3-3 M14 8H6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
     </div>`;
+  document.getElementById("btn-changepwd").addEventListener("click", () => {
+    openChangePwd(State.user.id, State.user.username);
+  });
   document.getElementById("btn-logout").addEventListener("click", async () => {
     try { await api("/auth/logout", { method: "POST" }); } catch {}
     setToken(""); State.user = null;

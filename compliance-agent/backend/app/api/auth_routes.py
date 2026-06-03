@@ -11,12 +11,15 @@ from app.api.schemas import (
     CreateUserRequest,
     LoginRequest,
     LoginResponse,
+    PasswordChangeRequest,
+    SetActiveRequest,
     UserOut,
 )
 from app.core.auth import get_current_user, log_action, new_token, require_admin
 from app.core.permissions import ALL_ROLES, normalize_role, role_label
 from app.core.security import hash_password, verify_password
 from app.models import AuditLog, AuthToken, User, get_db
+from app.services import user_service
 
 auth_router = APIRouter(prefix="/api/auth", tags=["auth"])
 users_router = APIRouter(prefix="/api/users", tags=["users"])
@@ -87,6 +90,34 @@ def create_user(req: CreateUserRequest,
     db.commit()
     db.refresh(user)
     return user
+
+
+# ─── 用户管理增强：改密码 / 启停 / 软删 ──────────────
+@users_router.patch("/{user_id}/password", response_model=UserOut)
+def change_password(user_id: int, req: PasswordChangeRequest,
+                    db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """改密码。管理员可改任何人；非管理员只能改自己且必须提供旧密码。"""
+    return user_service.update_password(
+        db, user_id, req.new_password, user, req.old_password
+    )
+
+
+@users_router.patch("/{user_id}/activate", response_model=UserOut)
+def set_user_active(user_id: int, req: SetActiveRequest,
+                    db: Session = Depends(get_db),
+                    admin: User = Depends(require_admin)):
+    """启用/停用用户。"""
+    return user_service.set_active(db, user_id, req.active, admin)
+
+
+@users_router.delete("/{user_id}")
+def delete_user(user_id: int,
+                db: Session = Depends(get_db),
+                admin: User = Depends(require_admin)):
+    """软删用户（停用 + 用户名加 deleted_ 前缀避免重名）。"""
+    user_service.soft_delete_user(db, user_id, admin)
+    return {"status": "ok"}
 
 
 # ─── 审计日志（仅超级管理员）──────────────────────────
