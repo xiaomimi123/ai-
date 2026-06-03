@@ -18,6 +18,15 @@ class DeepSeekClient(LLMClient):
         self._model = model
         self._thinking_mode = thinking_mode
 
+    @property
+    def thinking_mode(self) -> str:
+        return self._thinking_mode
+
+    @thinking_mode.setter
+    def thinking_mode(self, value: str) -> None:
+        # 兼容快速模式："off" 视为 non_think
+        self._thinking_mode = "non_think" if value in ("off", "none", "fast") else value
+
     def _thinking_kwargs(self) -> dict:
         if self._thinking_mode == "think_high":
             return {"extra_body": {"thinking": {"type": "enabled", "budget_tokens": 8000}}}

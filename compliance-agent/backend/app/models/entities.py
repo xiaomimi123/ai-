@@ -198,6 +198,12 @@ class AuditTask(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     # 任务级统计（JSON 序列化）
     stats: Mapped[str] = mapped_column(Text, default="")
+    # 实时进度（核查时回写）
+    progress_current: Mapped[int] = mapped_column(Integer, default=0)
+    progress_total: Mapped[int] = mapped_column(Integer, default=0)
+    progress_text: Mapped[str] = mapped_column(String(256), default="")
+    # 快速模式：跳过 LLM 思考过程，约 3-4 倍提速
+    fast_mode: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

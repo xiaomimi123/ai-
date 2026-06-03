@@ -385,6 +385,61 @@ button { font-family: inherit; }
 .btn-sm svg { display: block; }
 .btn:active { transform: scale(0.98); }
 
+/* === AI 核查实时进度卡片 === */
+.tw-progress {
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #f6f9ff 0%, #eef4ff 100%);
+  border: 1px solid #cfdcf5;
+  border-radius: 10px;
+}
+.tw-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+.tw-progress-title { display: inline-flex; align-items: center; gap: 8px; color: #1d4798; }
+.tw-progress-count { color: #1d4798; }
+.tw-progress-count strong { font-size: 16px; color: #0071e3; }
+.tw-progress-mode {
+  background: #fff3cd;
+  color: #856404;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin-left: 4px;
+}
+.tw-progress-bar {
+  height: 6px;
+  background: #dde6f4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.tw-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0071e3 0%, #4a9eff 100%);
+  width: 0;
+  transition: width 0.4s ease;
+}
+.tw-progress-text {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #5f6e89;
+}
+.tw-progress-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #cfdcf5;
+  border-top-color: #0071e3;
+  border-radius: 50%;
+  animation: tw-spin 0.8s linear infinite;
+}
+@keyframes tw-spin { to { transform: rotate(360deg); } }
+
 /* === 工作底稿：7 对复选框徽章 === */
 .ws-flag {
   display: inline-block;

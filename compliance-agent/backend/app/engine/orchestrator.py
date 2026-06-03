@@ -114,6 +114,9 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
     """
     task.status = "running"
     task.summary = "AI 核查中…"
+    task.progress_current = 0
+    task.progress_total = 0
+    task.progress_text = "准备中…"
     db.commit()
 
     try:
@@ -123,10 +126,15 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
         db.query(Finding).filter(Finding.task_id == task.id).delete()
         db.flush()
 
-        # 准备 LLM 客户端
+        # 准备 LLM 客户端（支持快速模式：跳过思考过程）
         llm = get_llm_client(db)
         from app.llm.stub import StubLLMClient
         llm_available = not isinstance(llm, StubLLMClient)
+        if task.fast_mode and hasattr(llm, "thinking_mode"):
+            try:
+                llm.thinking_mode = "off"   # type: ignore[attr-defined]
+            except Exception:
+                pass
 
         materials = list(task.materials)
         target_indicators = _resolve_target_indicators(db, task)
@@ -148,8 +156,16 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
             return task
 
         # 主循环：对每个指标 × 关联材料 跑核查
+        task.progress_total = len(target_indicators)
+        db.commit()
+
         indicators_checked = 0
-        for indicator in target_indicators:
+        for idx, indicator in enumerate(target_indicators, start=1):
+            # 进度回写（让前端轮询能看到）
+            label_name = (indicator.name or "")[:28]
+            task.progress_text = f"{indicator.indicator_code} {label_name}"
+            db.commit()
+
             related = _materials_for_indicator(materials, indicator)
             if not related:
                 # 该指标完全无材料 → 产生一条"完整性"finding 提示缺失
@@ -166,6 +182,8 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
                     suggestion=f"请补充与指标【{indicator.name}】相关的材料（建议：{indicator.required_materials or '查看指标定义'}）",
                     source="rule",
                 ))
+                task.progress_current = idx
+                db.commit()
                 continue
 
             indicators_checked += 1
@@ -190,7 +208,12 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
                     for l in llm_results:
                         db.add(_to_finding(task.id, material.id, indicator, l, source="llm"))
 
+            task.progress_current = idx
+            db.commit()
+
         db.flush()
+        task.progress_text = "汇总评分中…"
+        db.commit()
 
         # 聚合统计 + 评分
         all_findings = db.query(Finding).filter(Finding.task_id == task.id).all()
@@ -208,6 +231,8 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
         task.summary = _build_summary(stats, llm_available)
         task.status = "ai_done"
         task.completed_at = datetime.utcnow()
+        task.progress_text = "底稿生成中…"
+        db.commit()
 
         # 生成工作底稿草案（V1：AI 阅卷产物）
         from app.services.worksheet_service import build_worksheet_draft
@@ -215,9 +240,13 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
             build_worksheet_draft(db, task)
         except Exception as exc:
             print(f"[worksheet] 底稿生成失败: {exc}")
+
+        # 标记进度完成
+        task.progress_text = "完成"
     except Exception as exc:
         task.status = "failed"
         task.summary = f"核查失败：{exc}"
+        task.progress_text = f"失败：{exc}"[:256]
 
     db.commit()
     db.refresh(task)

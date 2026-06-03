@@ -328,7 +328,13 @@ async function loadTasks() {
           <td onclick="navigate('#/tasks/${t.id}')" style="font-weight:500">${esc(unit ? unit.name : "—")}</td>
           <td onclick="navigate('#/tasks/${t.id}')">${esc(t.name)}</td>
           <td onclick="navigate('#/tasks/${t.id}')" class="table-mono">${t.eval_year}</td>
-          <td onclick="navigate('#/tasks/${t.id}')">${statusBadge(t.status)}</td>
+          <td onclick="navigate('#/tasks/${t.id}')">
+            ${statusBadge(t.status)}
+            ${t.status === "running" && t.progress_total > 0
+              ? `<span class="text-xs text-muted" style="margin-left:6px">${t.progress_current}/${t.progress_total}</span>`
+              : ""}
+            ${t.fast_mode ? `<span class="text-xs" style="margin-left:6px;color:#856404">⚡</span>` : ""}
+          </td>
           <td onclick="navigate('#/tasks/${t.id}')" class="text-sm text-muted">${esc(t.summary || "—")}</td>
           <td class="text-right" style="white-space:nowrap">
             <button class="btn btn-ghost btn-sm" onclick="navigate('#/tasks/${t.id}')" title="查看">${icon("arrow")}</button>
@@ -456,6 +462,7 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
     }
   }
 
+  const fastMode = document.getElementById("ct-fast-mode")?.checked || false;
   try {
     const task = await api("/tasks", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -465,11 +472,13 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
         eval_year: parseInt(fd.get("eval_year")),
         scope,
         selected_indicator_ids: selectedIds,
+        fast_mode: fastMode,
       }),
     });
     document.getElementById("create-task-modal").classList.add("hidden");
     const scopeLbl = scope === "all" ? "全部指标" : `${selectedIds.length} 个指标`;
-    toast(`✓ 任务 #${pad(task.id)} 已创建（${scopeLbl}）`, "success");
+    const modeLbl = fastMode ? " · ⚡快速" : "";
+    toast(`✓ 任务 #${pad(task.id)} 已创建（${scopeLbl}${modeLbl}）`, "success");
     navigate(`#/tasks/${task.id}`);
   } catch (e) {
     errBox.textContent = e.message;
@@ -498,9 +507,59 @@ async function loadTaskWorkspace(taskId) {
     document.getElementById("tw-count-findings").textContent = detail.findings.length;
 
     renderTaskActions(detail.task);
+    renderProgress(detail.task);
     renderSubtab();
+    maybeStartProgressPolling(detail.task);
   } catch (e) { toast(e.message, "error"); }
 }
+
+function renderProgress(task) {
+  const box = document.getElementById("tw-progress");
+  if (!box) return;
+  if (task.status !== "running") { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  const cur = task.progress_current || 0;
+  const total = task.progress_total || 0;
+  const pct = total > 0 ? Math.min(100, Math.round((cur / total) * 100)) : 0;
+  document.getElementById("tw-progress-cur").textContent = cur;
+  document.getElementById("tw-progress-total").textContent = total || "?";
+  document.getElementById("tw-progress-fill").style.width = pct + "%";
+  document.getElementById("tw-progress-now").textContent = task.progress_text || "准备中…";
+  const modeEl = document.getElementById("tw-progress-mode");
+  modeEl.textContent = task.fast_mode ? "⚡ 快速模式" : "";
+  modeEl.style.display = task.fast_mode ? "" : "none";
+}
+
+let _progressTimer = null;
+function stopProgressPolling() {
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+}
+function maybeStartProgressPolling(task) {
+  stopProgressPolling();
+  if (task.status !== "running") return;
+  const taskId = task.id;
+  _progressTimer = setInterval(async () => {
+    if (State.taskId !== taskId) { stopProgressPolling(); return; }
+    try {
+      const detail = await api(`/tasks/${taskId}`);
+      State.taskDetail = detail;
+      renderProgress(detail.task);
+      document.getElementById("tw-meta").innerHTML =
+        `${esc(detail.unit.name)} · ${detail.task.eval_year} 年度 · ${statusBadge(detail.task.status)}`;
+      if (detail.task.status !== "running") {
+        stopProgressPolling();
+        // 状态变了 → 重渲整个工作台拿底稿、findings 等
+        loadTaskWorkspace(taskId);
+      }
+    } catch (e) {
+      console.warn("progress poll failed:", e.message);
+    }
+  }, 3000);
+}
+// 离开任务页时停轮询
+window.addEventListener("hashchange", () => {
+  if (!location.hash.startsWith("#/tasks/")) stopProgressPolling();
+});
 
 function renderTaskActions(task) {
   const box = document.getElementById("tw-actions");

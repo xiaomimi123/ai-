@@ -86,6 +86,7 @@ def create_task(req: AuditTaskCreate,
         eval_year=req.eval_year,
         scope=req.scope,
         selected_indicator_ids=req.selected_indicator_ids,
+        fast_mode=req.fast_mode,
         user=user,
     )
 

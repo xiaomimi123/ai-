@@ -33,6 +33,10 @@ _EXTRA_COLUMNS: list[tuple[str, str, str]] = [
     ("indicators", "audit_points", "TEXT NOT NULL DEFAULT ''"),
     ("materials", "content_hash", "VARCHAR(64) NOT NULL DEFAULT ''"),
     ("materials", "content_fingerprint", "VARCHAR(64) NOT NULL DEFAULT ''"),
+    ("audit_tasks", "progress_current", "INTEGER NOT NULL DEFAULT 0"),
+    ("audit_tasks", "progress_total", "INTEGER NOT NULL DEFAULT 0"),
+    ("audit_tasks", "progress_text", "VARCHAR(256) NOT NULL DEFAULT ''"),
+    ("audit_tasks", "fast_mode", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 

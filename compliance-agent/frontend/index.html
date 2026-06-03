@@ -266,6 +266,19 @@
           </div>
           <div class="action-bar" id="tw-actions"></div>
         </div>
+        <!-- AI 核查实时进度（仅 running 显示） -->
+        <div id="tw-progress" class="tw-progress hidden">
+          <div class="tw-progress-head">
+            <span class="tw-progress-title">
+              <span class="tw-progress-spinner"></span>
+              AI 核查中…
+              <span id="tw-progress-mode" class="tw-progress-mode"></span>
+            </span>
+            <span class="tw-progress-count"><strong id="tw-progress-cur">0</strong> / <span id="tw-progress-total">0</span> 项</span>
+          </div>
+          <div class="tw-progress-bar"><div class="tw-progress-bar-fill" id="tw-progress-fill"></div></div>
+          <div class="tw-progress-text">当前指标：<span id="tw-progress-now">准备中…</span></div>
+        </div>
       </header>
 
       <nav class="subnav">
@@ -814,6 +827,15 @@
           <div class="text-xs text-muted mb-2" id="ct-indicator-count">加载指标中…</div>
           <div id="ct-indicator-list"></div>
         </div>
+      </div>
+
+      <!-- 快速模式 -->
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0">
+          <input type="checkbox" id="ct-fast-mode" />
+          <span><strong>⚡ 快速模式</strong></span>
+          <span class="text-xs text-faint">跳过 AI 深度思考，全量核查约 3-4 分钟（默认 9-10 分钟）。精度略低，适合先快速看效果。</span>
+        </label>
       </div>
 
       <div id="ct-error" class="callout callout-error hidden mb-3"></div>

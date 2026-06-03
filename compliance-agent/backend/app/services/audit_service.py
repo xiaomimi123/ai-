@@ -53,6 +53,7 @@ def create_unit(db: Session, *, name: str, code: str = "", level: str = "单位"
 def create_task(db: Session, *, unit_id: int, name: str, eval_year: int = 2025,
                 scope: str = "all",
                 selected_indicator_ids: Optional[list] = None,
+                fast_mode: bool = False,
                 user: Optional[User] = None) -> AuditTask:
     unit = db.get(AuditUnit, unit_id)
     if not unit:
@@ -68,14 +69,16 @@ def create_task(db: Session, *, unit_id: int, name: str, eval_year: int = 2025,
         unit_id=unit_id, name=name, eval_year=eval_year,
         scope=scope,
         selected_indicator_ids=_json.dumps(sel_ids),
+        fast_mode=bool(fast_mode),
         status="pending", summary="等待上传材料",
         created_by=user.id if user else None,
     )
     db.add(task); db.flush()
     scope_label = "全部指标" if scope == "all" else f"选定 {len(sel_ids)} 个指标"
+    mode_label = "快速模式" if fast_mode else "精确模式"
     log_action(db, user, "task.create",
                target_type="task", target_id=task.id,
-               detail=f"为「{unit.name}」创建任务「{name}」（{eval_year}，{scope_label}）")
+               detail=f"为「{unit.name}」创建任务「{name}」（{eval_year}，{scope_label}，{mode_label}）")
     db.commit(); db.refresh(task)
     return task
 

@@ -240,6 +240,7 @@ class AuditTaskCreate(BaseModel):
     eval_year: int = 2025
     scope: str = "all"   # "all" | "selected"
     selected_indicator_ids: List[int] = Field(default_factory=list)
+    fast_mode: bool = False
 
 
 class AuditTaskOut(BaseModel):
@@ -252,6 +253,10 @@ class AuditTaskOut(BaseModel):
     status: str
     summary: str
     stats: str
+    progress_current: int = 0
+    progress_total: int = 0
+    progress_text: str = ""
+    fast_mode: bool = False
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
