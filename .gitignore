@@ -1,0 +1,51 @@
+# Claude Code 本地权限配置（每台机器不同，不应共享）
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# 数据库 / 存储 / 日志
+*.db
+*.sqlite
+compliance.db
+audit.db
+*.log
+backend/storage/
+backend/data/
+backend/_test_storage/
+
+# Docker volume 本地映射
+data/postgres/
+data/qdrant/
+data/redis/
+data/minio/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+# 构建产物 / 缓存
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 临时
+*.tmp
+/tmp/
+node_modules/
