@@ -575,9 +575,11 @@ function renderTaskActions(task) {
   if (task.status === "ai_done" || task.status === "reviewing") {
     acts.push(`<button class="btn btn-success" onclick="finalizeTask()">${icon("check")} <span>完成复核，定稿</span></button>`);
   }
-  if (["ai_done", "reviewing", "finalized", "archived"].includes(task.status)) {
-    acts.push(`<button class="btn btn-secondary" onclick="downloadTaskReport()">${icon("download")} <span>导出 Word 报告</span></button>`);
-  }
+  // V3.1：暂时隐藏「导出 Word 报告」入口（用户当前主要走 Excel 底稿流程）
+  // 接口仍保留，恢复时打开下面这段即可：
+  // if (["ai_done", "reviewing", "finalized", "archived"].includes(task.status)) {
+  //   acts.push(`<button class="btn btn-secondary" onclick="downloadTaskReport()">${icon("download")} <span>导出 Word 报告</span></button>`);
+  // }
   acts.push(`<button class="btn btn-danger-ghost" onclick="deleteCurrentTask()" title="删除任务">${icon("delete")} <span>删除任务</span></button>`);
   box.innerHTML = acts.join("");
 }
