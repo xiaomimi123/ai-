@@ -82,8 +82,8 @@ def test_worksheet_xlsx_export_shape(client, auth_headers):
         None,
     )
     assert total_row is not None
-    # 合计行标准分值在第 7 列（新列顺序）；新模板 54 项总分 98
-    assert ws.cell(total_row, 7).value == 98
+    # 合计行标准分值在第 7 列；V3 模板 54 项总分 100（4 项分值已对称修正）
+    assert ws.cell(total_row, 7).value == 100
 
 
 def test_cross_task_duplicate_flag(client, auth_headers):
@@ -115,7 +115,8 @@ def test_indicator_audit_points_persisted(client, auth_headers):
     """V3 模板 54 项 seed 应都带 audit_points + deduct_rules。"""
     inds = client.get("/api/indicators", headers=auth_headers).json()
     assert len(inds) == 54
-    assert sum(i["max_score"] for i in inds) == 98  # V3 模板总分 98
+    # 模板原 98 分；4 项分值对称化修正后回到标准 100
+    assert sum(i["max_score"] for i in inds) == 100
     for ind in inds:
         assert ind["audit_points"], f"{ind['indicator_code']} 缺核查要点"
         assert ind["deduct_rules"], f"{ind['indicator_code']} 缺扣分规则"
