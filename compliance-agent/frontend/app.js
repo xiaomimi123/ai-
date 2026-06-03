@@ -2289,7 +2289,7 @@ function renderCheckItems() {
     <td><span class="badge badge-blue">${esc(it.dimension)}</span></td>
     <td>${esc(it.subcategory)}</td>
     <td class="text-sm">${esc(it.description)}</td>
-    <td><span class="tag">${esc(it.check_method)}</span></td>
+    <td><span class="tag">${esc(checkMethodLabel(it.check_method))}</span></td>
     <td><span class="chip-risk chip-risk-${it.risk_level}">${it.risk_level}</span></td>
     <td class="text-right" style="white-space:nowrap">
       <button class="btn btn-ghost btn-sm" onclick="viewCheckItem(${it.id})" title="查看详情">${icon("view")}</button>
@@ -2314,7 +2314,7 @@ window.viewCheckItem = function(id) {
     ["检查维度", `<span class="badge badge-blue">${esc(it.dimension)}</span>`],
     ["子类", esc(it.subcategory) || "—"],
     ["条目描述", `<div class="detail-quote" style="margin:0">${esc(it.description)}</div>`],
-    ["检查方法", `<span class="tag">${esc(it.check_method)}</span> ${it.check_method === 'rule' ? '（刚性规则）' : '（LLM 语义判断）'}`],
+    ["检查方法", `<span class="tag">${esc(checkMethodLabel(it.check_method))}</span> ${it.check_method === 'rule' ? '（基于规则关键词匹配）' : '（AI 语义判断）'}`],
     ["风险等级", `<span class="chip-risk chip-risk-${it.risk_level}">${it.risk_level}</span>`],
     ["适用指标", apps.length ? apps.map(c => `<span class="code-id">${esc(c)}</span>`).join("、") : "全部指标"],
     ["常见问题", pats.length ? pats.map(p => `<div class="text-sm">· ${esc(p)}</div>`).join("") : "—"],
@@ -2491,7 +2491,7 @@ const IMPORT_COLUMNS = {
     { key: "dimension", label: "维度", w: 120 },
     { key: "subcategory", label: "子类", w: 100 },
     { key: "description", label: "描述" },
-    { key: "check_method", label: "方法", w: 70 },
+    { key: "check_method", label: "方法", w: 80, fmt: checkMethodLabel },
     { key: "risk_level", label: "风险", w: 60 },
   ],
 };
@@ -2506,6 +2506,15 @@ function tryJsonList(v) {
 function truncate160(v) {
   const s = String(v ?? "");
   return s.length > 160 ? s.slice(0, 160) + "…" : s;
+}
+
+// 问题清单 check_method 字段中文化
+const CHECK_METHOD_LABEL = {
+  rule: "规则匹配",
+  llm:  "AI 分析",
+};
+function checkMethodLabel(m) {
+  return CHECK_METHOD_LABEL[m] || (m || "—");
 }
 
 async function importDryRun(kind, file) {
@@ -2936,8 +2945,22 @@ async function loadUnitsConsole() {
       <td class="text-muted">${esc(u.code || "—")}</td>
       <td><span class="badge badge-gray">${esc(u.level)}</span></td>
       <td class="text-sm text-muted">${fmtTime(u.created_at)}</td>
-    </tr>`).join("") || `<tr><td colspan="5" class="empty-state">暂无单位</td></tr>`;
+      <td class="text-right">
+        <button class="btn btn-danger-ghost btn-sm" onclick="deleteUnit(${u.id}, '${esc(u.name).replace(/'/g, "\\'")}')" title="删除单位">${icon("delete")}</button>
+      </td>
+    </tr>`).join("") || `<tr><td colspan="6" class="empty-state">暂无单位</td></tr>`;
 }
+
+window.deleteUnit = async function(unitId, name) {
+  if (!confirm(`确定删除单位「${name}」？\n\n如有关联任务必须先删除任务。`)) return;
+  try {
+    await api(`/units/${unitId}`, { method: "DELETE" });
+    toast(`✓ 已删除单位「${name}」`, "success");
+    await loadUnitsConsole();
+  } catch (e) {
+    toast(`✗ ${e.message}`, "error");
+  }
+};
 
 document.getElementById("unit-form").addEventListener("submit", async ev => {
   ev.preventDefault();

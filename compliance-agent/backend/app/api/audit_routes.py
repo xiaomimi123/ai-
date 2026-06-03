@@ -58,6 +58,31 @@ def create_unit(req: AuditUnitIn,
     )
 
 
+@units_router.delete("/{unit_id}")
+def delete_unit(unit_id: int,
+                db: Session = Depends(get_db),
+                user: User = Depends(require_auditor)):
+    """删除被检查单位（含任务引用校验）。"""
+    unit = db.get(AuditUnit, unit_id)
+    if not unit:
+        raise HTTPException(404, "单位不存在")
+    n_tasks = db.query(AuditTask).filter(AuditTask.unit_id == unit_id).count()
+    if n_tasks > 0:
+        raise HTTPException(
+            400,
+            f"该单位下还有 {n_tasks} 个核查任务，请先删除任务再删除单位",
+        )
+    # 把绑定的 unit 用户解绑
+    db.query(User).filter(User.unit_id == unit_id).update({User.unit_id: None})
+    name = unit.name
+    db.delete(unit)
+    log_action(db, user, "unit.delete",
+               target_type="unit", target_id=unit_id,
+               detail=f"删除单位「{name}」")
+    db.commit()
+    return {"status": "ok"}
+
+
 # ============================================================
 # 任务
 # ============================================================

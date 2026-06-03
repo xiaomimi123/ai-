@@ -42,7 +42,7 @@ def test_worksheet_55_rows_after_audit(client, auth_headers):
     r = client.get(f"/api/tasks/{task_id}/worksheet", headers=H)
     assert r.status_code == 200, r.text
     ws = r.json()
-    assert len(ws["rows"]) == 55
+    assert len(ws["rows"]) == 54
     assert ws["unit_name"] == "WS-55行测试"
     assert ws["status"] == "draft"
 
@@ -82,8 +82,8 @@ def test_worksheet_xlsx_export_shape(client, auth_headers):
         None,
     )
     assert total_row is not None
-    # 合计行标准分值在第 7 列（新列顺序）
-    assert ws.cell(total_row, 7).value == 100
+    # 合计行标准分值在第 7 列（新列顺序）；新模板 54 项总分 98
+    assert ws.cell(total_row, 7).value == 98
 
 
 def test_cross_task_duplicate_flag(client, auth_headers):
@@ -112,10 +112,10 @@ def test_cross_task_duplicate_flag(client, auth_headers):
 
 
 def test_indicator_audit_points_persisted(client, auth_headers):
-    """55 项 seed 应都带 audit_points + deduct_rules。"""
+    """V3 模板 54 项 seed 应都带 audit_points + deduct_rules。"""
     inds = client.get("/api/indicators", headers=auth_headers).json()
-    assert len(inds) == 55
-    assert sum(i["max_score"] for i in inds) == 100
+    assert len(inds) == 54
+    assert sum(i["max_score"] for i in inds) == 98  # V3 模板总分 98
     for ind in inds:
         assert ind["audit_points"], f"{ind['indicator_code']} 缺核查要点"
         assert ind["deduct_rules"], f"{ind['indicator_code']} 缺扣分规则"

@@ -22,10 +22,17 @@ def _seed_path() -> Path:
     return Path(__file__).parent / "indicators_55.json"
 
 
-def load(replace: bool = False) -> tuple[int, int]:
-    """返回 (created, updated)。"""
+def load(replace: bool = False) -> tuple[int, int, int]:
+    """返回 (created, updated, removed_stale)。
+
+    removed_stale：seed 文件里没有但库里残留的 I-* 指标会被自动清掉
+    （仅清没有 Material / Finding / WorksheetRow 引用的，保证幂等）
+    """
     init_db()  # 确保表 + 新列已就绪
     items = json.loads(_seed_path().read_text(encoding="utf-8"))
+    seed_codes = {it["code"] for it in items}
+
+    from app.models import Material, Finding, WorksheetRow
 
     db = SessionLocal()
     try:
@@ -54,12 +61,34 @@ def load(replace: bool = False) -> tuple[int, int]:
                 db.add(Indicator(indicator_code=code, **payload))
                 created += 1
         db.commit()
-        return created, updated
+
+        # 清除残留：seed 文件已删除但库里仍有的 I-* 指标
+        # 跳过有引用的（避免破坏老任务 / 工作底稿）
+        removed = 0
+        stale = db.query(Indicator).filter(
+            Indicator.indicator_code.like("I-%"),
+            ~Indicator.indicator_code.in_(seed_codes) if seed_codes else True,
+        ).all()
+        for ind in stale:
+            in_use = (
+                db.query(Material).filter(Material.indicator_id == ind.id).count()
+                + db.query(Finding).filter(Finding.indicator_id == ind.id).count()
+                + db.query(WorksheetRow).filter(WorksheetRow.indicator_id == ind.id).count()
+            )
+            if in_use:
+                # 有引用 → 改名标记 deleted_*，从指标库列表里隐去（用 indicator_code 前缀过滤）
+                # 简单做法：跳过，后续手工处理
+                continue
+            db.delete(ind)
+            removed += 1
+        db.commit()
+        return created, updated, removed
     finally:
         db.close()
 
 
 if __name__ == "__main__":
     replace = "--replace" in sys.argv
-    c, u = load(replace=replace)
-    print(f"seed 完成：新增 {c} 项 / 更新 {u} 项{'（已先清空老指标）' if replace else ''}")
+    c, u, r = load(replace=replace)
+    print(f"seed 完成：新增 {c} / 更新 {u} / 清残留 {r}"
+          + ('（已先清空老指标）' if replace else ''))
