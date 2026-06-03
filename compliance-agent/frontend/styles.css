@@ -378,6 +378,11 @@ button { font-family: inherit; }
   gap: 6px;
   line-height: 1.4;
 }
+.btn span[data-icon],
+.btn svg { display: inline-flex; align-items: center; }
+.btn svg { flex-shrink: 0; }
+/* 让 btn-sm 内的 svg 居中 */
+.btn-sm svg { display: block; }
 .btn:active { transform: scale(0.98); }
 
 .btn-primary {

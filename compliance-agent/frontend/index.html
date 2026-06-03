@@ -27,11 +27,6 @@
         被检查单位的<br />
         内控评价材料
       </h1>
-      <p class="login-hero-desc">
-        站在上级复核方视角，AI 拿着问题清单和法规，
-        把人工数天的材料核查压缩到分钟级，
-        让你专注在最需要判断的环节。
-      </p>
     </div>
 
     <div class="login-features">
@@ -81,11 +76,6 @@
         <button type="submit" class="login-btn">登 录</button>
       </form>
 
-      <div class="login-hint">
-        默认管理员凭据 ·
-        <code>admin</code> /
-        <code>admin123</code>
-      </div>
     </div>
   </div>
 </div>
@@ -182,7 +172,7 @@
             <h1 class="page-title">工作台</h1>
             <p class="page-sub">站在上级复核方视角，AI 拿着问题清单和法规，对被检查单位逐项核查。</p>
           </div>
-          <button class="btn btn-primary" id="quick-create-task">+ 新建核查任务</button>
+          <button class="btn btn-primary" id="quick-create-task"><span data-icon="plus"></span><span>新建核查任务</span></button>
         </div>
       </header>
       <div class="page-body">
@@ -245,7 +235,7 @@
             <h1 class="page-title">核查任务</h1>
             <p class="page-sub">一个任务对应一个被检查单位的一次内控评价复核。</p>
           </div>
-          <button class="btn btn-primary" id="open-create-task">+ 新建任务</button>
+          <button class="btn btn-primary" id="open-create-task"><span data-icon="plus"></span><span>新建任务</span></button>
         </div>
       </header>
       <div class="page-body">
@@ -302,7 +292,7 @@
           <div class="card mb-4">
             <div class="flex justify-between items-center mb-3">
               <div class="section-title" style="margin-bottom:0">上传佐证材料</div>
-              <button class="btn btn-secondary btn-sm" id="md-folder-btn">📁 批量上传文件夹</button>
+              <button class="btn btn-secondary btn-sm" id="md-folder-btn"><span data-icon="folder"></span><span>批量上传文件夹</span></button>
             </div>
             <p class="text-sm text-muted mb-4">
               单文件上传时可绑定具体指标；批量上传文件夹时材料归入共享池，
@@ -353,7 +343,7 @@
           <div class="card" style="padding:0">
             <div class="flex justify-between items-center" style="padding:16px 24px;border-bottom:1px solid var(--divider)">
               <div class="section-title" style="margin-bottom:0">已上传材料</div>
-              <button id="tw-run-btn" class="btn btn-primary">▶ 触发 AI 核查</button>
+              <button id="tw-run-btn" class="btn btn-primary"><span data-icon="play"></span><span>触发 AI 核查</span></button>
             </div>
             <table class="table">
               <thead><tr><th>编号</th><th>文件</th><th>绑定指标</th><th>关键要素</th></tr></thead>
@@ -397,8 +387,8 @@
             <p class="page-sub">上位法、评价办法、编报指南、地方法规等，AI 判断的法律依据来源。</p>
           </div>
           <div class="action-bar">
-            <button class="btn btn-secondary" id="open-folder-upload">📁 文件夹批量上传</button>
-            <button class="btn btn-primary" id="open-reg-upload">+ 上传法规</button>
+            <button class="btn btn-secondary" id="open-folder-upload"><span data-icon="folder"></span><span>文件夹批量上传</span></button>
+            <button class="btn btn-primary" id="open-reg-upload"><span data-icon="plus"></span><span>上传法规</span></button>
           </div>
         </div>
       </header>
@@ -443,9 +433,10 @@
             <p class="page-sub">编报指南附件 1/2 中的评价指标，AI 判断的基准。</p>
           </div>
           <div class="action-bar">
-            <button class="btn btn-ghost" id="export-indicators">⬇ 导出当前列表</button>
+            <button class="btn btn-ghost" id="export-indicators"><span data-icon="download"></span><span>导出当前列表</span></button>
             <label class="btn btn-secondary">
-              ⇪ 批量导入（JSON / PDF / Word / Excel）
+              <span data-icon="upload"></span>
+              <span>批量导入（JSON / PDF / Word / Excel）</span>
               <input type="file" id="import-indicators" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
             </label>
           </div>
@@ -488,9 +479,10 @@
             <p class="page-sub">客户提供的真实性 + 相关性核查清单，AI 的「考题」。</p>
           </div>
           <div class="action-bar">
-            <button class="btn btn-ghost" id="export-check-items">⬇ 导出当前列表</button>
+            <button class="btn btn-ghost" id="export-check-items"><span data-icon="download"></span><span>导出当前列表</span></button>
             <label class="btn btn-secondary">
-              ⇪ 批量导入（JSON / PDF / Word / Excel）
+              <span data-icon="upload"></span>
+              <span>批量导入（JSON / PDF / Word / Excel）</span>
               <input type="file" id="import-items" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
             </label>
           </div>
@@ -716,7 +708,7 @@
                     <h2 class="console-section-title">操作日志</h2>
                     <p class="console-section-desc">全程留痕可溯源，最近 100 条记录。</p>
                   </div>
-                  <button class="btn btn-secondary btn-sm" id="refresh-audit">↻ 刷新</button>
+                  <button class="btn btn-secondary btn-sm" id="refresh-audit"><span data-icon="refresh"></span><span>刷新</span></button>
                 </div>
                 <table class="table">
                   <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>对象</th><th>详情</th></tr></thead>
@@ -744,7 +736,7 @@
         <select name="unit_id" id="ct-unit-select" class="form-select" required>
           <option value="">— 选择单位 —</option>
         </select>
-        <button type="button" class="btn-link mt-2" id="ct-new-unit">+ 新建单位</button>
+        <button type="button" class="btn-link mt-2" id="ct-new-unit"><span data-icon="plus"></span><span>新建单位</span></button>
       </div>
       <div id="ct-new-unit-form" class="hidden mb-4" style="background:var(--bg);padding:12px;border-radius:8px">
         <div class="grid-2">
@@ -1018,7 +1010,7 @@
     </div>
 
     <div class="action-bar mt-3">
-      <a id="rp-download" class="btn btn-secondary" target="_blank">⬇ 下载原文件</a>
+      <a id="rp-download" class="btn btn-secondary" target="_blank"><span data-icon="download"></span><span>下载原文件</span></a>
       <button class="btn btn-ghost" data-close-modal="#reg-preview-modal">关闭</button>
     </div>
   </div>
@@ -1061,7 +1053,7 @@
     </div>
     <dl id="kbd-grid" class="detail-meta-grid"></dl>
     <div class="action-bar mt-4">
-      <button class="btn btn-secondary" id="kbd-download">⬇ 下载该条 JSON</button>
+      <button class="btn btn-secondary" id="kbd-download"><span data-icon="download"></span><span>下载该条 JSON</span></button>
       <button class="btn btn-ghost" data-close-modal="#kb-detail-modal">关闭</button>
     </div>
   </div>

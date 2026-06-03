@@ -65,6 +65,49 @@ function fmtTime(s) {
 function pad(n) { return String(n).padStart(2, "0"); }
 function initial(s) { return (s || "?").slice(0, 1).toUpperCase(); }
 
+// ============================================================
+// SVG 图标库（替代 emoji，保持苹果风格）
+// ============================================================
+function icon(name, size = 14) {
+  const s = size;
+  const paths = {
+    view:     `<path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.5" fill="none"/>`,
+    download: `<path d="M8 2v9 M5 8l3 3 3-3 M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    upload:   `<path d="M8 13V4 M5 7l3-3 3 3 M3 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    delete:   `<path d="M3 4h10 M5.5 4V2.5h5V4 M5 4l.5 9h5l.5-9 M6.5 6.5v4 M9.5 6.5v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    key:      `<path d="M10.5 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M8.8 7.7L3 13.5 4 14.5 6.5 12 5 10.5l1.5-1.5L8 10.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    pause:    `<rect x="4.5" y="3" width="2.5" height="10" stroke="currentColor" stroke-width="1.4" fill="none" rx="0.5"/><rect x="9" y="3" width="2.5" height="10" stroke="currentColor" stroke-width="1.4" fill="none" rx="0.5"/>`,
+    play:     `<path d="M4 3v10l9-5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/>`,
+    arrow:    `<path d="M5 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    folder:   `<path d="M2 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>`,
+    plus:     `<path d="M8 3v10 M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`,
+    minus:    `<path d="M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`,
+    check:    `<path d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`,
+    close:    `<path d="M4 4l8 8 M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+    file:     `<path d="M4 2h6l2 2v10H4z M10 2v3h3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>`,
+    docs:     `<path d="M4 2h5l3 3v9H4z M9 2v3h3 M6 8h4 M6 10h4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round" stroke-linecap="round"/>`,
+    refresh:  `<path d="M2 8a6 6 0 0 1 10-4.3 M14 2v4h-4 M14 8a6 6 0 0 1-10 4.3 M2 14v-4h4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  };
+  const p = paths[name];
+  if (!p) return "";
+  return `<svg width="${s}" height="${s}" viewBox="0 0 16 16" style="vertical-align:-2px">${p}</svg>`;
+}
+
+// 把所有 <span data-icon="X"> 替换为对应 SVG（DOM ready + 动态内容均覆盖）
+function renderIcons(root = document) {
+  root.querySelectorAll("span[data-icon]:not([data-icon-ready])").forEach(el => {
+    const name = el.dataset.icon;
+    const size = parseInt(el.dataset.size || "14");
+    el.innerHTML = icon(name, size);
+    el.dataset.iconReady = "1";
+  });
+}
+// 初始 + 每次 DOM 更新后再扫一次（用 MutationObserver 兜底）
+document.addEventListener("DOMContentLoaded", () => renderIcons());
+new MutationObserver(() => renderIcons()).observe(
+  document.body, { childList: true, subtree: true }
+);
+
 function toast(msg, kind = "info") {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -288,8 +331,8 @@ async function loadTasks() {
           <td onclick="navigate('#/tasks/${t.id}')">${statusBadge(t.status)}</td>
           <td onclick="navigate('#/tasks/${t.id}')" class="text-sm text-muted">${esc(t.summary || "—")}</td>
           <td class="text-right" style="white-space:nowrap">
-            <button class="btn btn-ghost btn-sm" onclick="navigate('#/tasks/${t.id}')" title="查看">→</button>
-            <button class="btn btn-danger-ghost btn-sm" onclick="deleteTaskFromList(${t.id}, event)" title="删除任务">✕</button>
+            <button class="btn btn-ghost btn-sm" onclick="navigate('#/tasks/${t.id}')" title="查看">${icon("arrow")}</button>
+            <button class="btn btn-danger-ghost btn-sm" onclick="deleteTaskFromList(${t.id}, event)" title="删除任务">${icon("delete")}</button>
           </td>
         </tr>`;
     }).join("");
@@ -463,12 +506,12 @@ function renderTaskActions(task) {
   const box = document.getElementById("tw-actions");
   const acts = [];
   if (task.status === "ai_done" || task.status === "reviewing") {
-    acts.push(`<button class="btn btn-success" onclick="finalizeTask()">✓ 完成复核，定稿</button>`);
+    acts.push(`<button class="btn btn-success" onclick="finalizeTask()">${icon("check")} <span>完成复核，定稿</span></button>`);
   }
   if (["ai_done", "reviewing", "finalized", "archived"].includes(task.status)) {
-    acts.push(`<button class="btn btn-secondary" onclick="downloadTaskReport()">导出 Word 报告</button>`);
+    acts.push(`<button class="btn btn-secondary" onclick="downloadTaskReport()">${icon("download")} <span>导出 Word 报告</span></button>`);
   }
-  acts.push(`<button class="btn btn-danger-ghost" onclick="deleteCurrentTask()" title="删除任务">✕ 删除任务</button>`);
+  acts.push(`<button class="btn btn-danger-ghost" onclick="deleteCurrentTask()" title="删除任务">${icon("delete")} <span>删除任务</span></button>`);
   box.innerHTML = acts.join("");
 }
 
@@ -1105,9 +1148,9 @@ async function loadRegulations() {
         <td class="text-sm text-muted">${fmtTime(r.created_at)}</td>
         <td>
           <div class="flex gap-2" style="justify-content:flex-end">
-            <button class="btn btn-ghost btn-sm" onclick="previewRegulation(${r.id})" title="预览">👁</button>
-            <a href="${API}/regulations/${r.id}/download" target="_blank" class="btn btn-ghost btn-sm" title="下载">↓</a>
-            ${isAdmin ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteRegulation(${r.id}, '${esc(r.title)}')" title="删除">✕</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="previewRegulation(${r.id})" title="预览">${icon("view")}</button>
+            <a href="${API}/regulations/${r.id}/download" target="_blank" class="btn btn-ghost btn-sm" title="下载">${icon("download")}</a>
+            ${isAdmin ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteRegulation(${r.id}, '${esc(r.title)}')" title="删除">${icon("delete")}</button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -1650,9 +1693,9 @@ function renderIndicators() {
       <td class="table-mono">${i.max_score}</td>
       <td class="text-sm text-muted">${esc(mats.join("、")) || '—'}</td>
       <td class="text-right" style="white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" onclick="viewIndicator(${i.id})" title="查看详情">👁</button>
+        <button class="btn btn-ghost btn-sm" onclick="viewIndicator(${i.id})" title="查看详情">${icon("view")}</button>
         ${isAdmin
-          ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteIndicator(${i.id}, '${esc(i.indicator_code)}')" title="删除">✕</button>`
+          ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteIndicator(${i.id}, '${esc(i.indicator_code)}')" title="删除">${icon("delete")}</button>`
           : ''}
       </td>
     </tr>`;
@@ -1771,9 +1814,9 @@ function renderCheckItems() {
     <td><span class="tag">${esc(it.check_method)}</span></td>
     <td><span class="chip-risk chip-risk-${it.risk_level}">${it.risk_level}</span></td>
     <td class="text-right" style="white-space:nowrap">
-      <button class="btn btn-ghost btn-sm" onclick="viewCheckItem(${it.id})" title="查看详情">👁</button>
+      <button class="btn btn-ghost btn-sm" onclick="viewCheckItem(${it.id})" title="查看详情">${icon("view")}</button>
       ${isAdmin
-        ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteCheckItem(${it.id}, '${esc(it.item_code)}')" title="删除">✕</button>`
+        ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteCheckItem(${it.id}, '${esc(it.item_code)}')" title="删除">${icon("delete")}</button>`
         : ''}
     </td>
   </tr>`).join("");
@@ -2258,14 +2301,14 @@ async function loadUsers() {
       ? '<span class="badge badge-green">启用</span>'
       : (isDeleted ? '<span class="badge badge-red">已删除</span>' : '<span class="badge badge-gray">停用</span>');
     const actions = [];
-    actions.push(`<button class="btn btn-ghost btn-sm" onclick="openChangePwd(${u.id}, '${esc(u.username)}')" title="改密码">🔑</button>`);
+    actions.push(`<button class="btn btn-ghost btn-sm" onclick="openChangePwd(${u.id}, '${esc(u.username)}')" title="改密码">${icon("key")}</button>`);
     if (!isSelf && !isDeleted) {
       if (u.is_active) {
-        actions.push(`<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(${u.id}, false)" title="停用">⏸</button>`);
+        actions.push(`<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(${u.id}, false)" title="停用">${icon("pause")}</button>`);
       } else {
-        actions.push(`<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(${u.id}, true)" title="启用">▶</button>`);
+        actions.push(`<button class="btn btn-ghost btn-sm" onclick="toggleUserActive(${u.id}, true)" title="启用">${icon("play")}</button>`);
       }
-      actions.push(`<button class="btn btn-danger-ghost btn-sm" onclick="deleteUser(${u.id}, '${esc(u.username)}')" title="软删">✕</button>`);
+      actions.push(`<button class="btn btn-danger-ghost btn-sm" onclick="deleteUser(${u.id}, '${esc(u.username)}')" title="软删">${icon("delete")}</button>`);
     }
     return `<tr>
       <td><span class="code-id">#${pad(u.id)}</span></td>
@@ -2463,11 +2506,7 @@ function renderUserCard() {
         <div class="user-name">${esc(name)}</div>
         <div class="user-role">${esc(State.roleLabel)}</div>
       </div>
-      <button class="btn-logout-icon" id="btn-changepwd" title="改密码">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-          <path d="M5 7V5a3 3 0 0 1 6 0v2 M3 7h10v6H3z M8 9v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
+      <button class="btn-logout-icon" id="btn-changepwd" title="改密码">${icon("key")}</button>
       <button class="btn-logout-icon" id="btn-logout" title="登出">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
           <path d="M6 3H3v10h3 M11 11l3-3-3-3 M14 8H6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
