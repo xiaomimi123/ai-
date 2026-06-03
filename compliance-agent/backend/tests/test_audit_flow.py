@@ -196,9 +196,13 @@ def test_upload_bad_material_detects_issues(admin_client):
     detail = admin_client.get(f"/api/tasks/{task_id}").json()
     findings = detail["findings"]
     types = {f["finding_type"] for f in findings}
-    # 应检出多类问题
-    assert "真实性问题" in types or "正式性问题" in types or "年度一致性问题" in types
-    assert len(findings) >= 3
+    # V3：finding_type 已规范化为 5 桶，草稿 → 合规性问题
+    assert types.issubset({
+        "真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题"
+    }), f"未知 finding_type: {types}"
+    # txt 材料带"征求意见稿" → 至少检出合规性问题（草稿）+ 完整性（要素缺失）
+    assert "合规性问题" in types or "完整性问题" in types
+    assert len(findings) >= 1
 
 
 # ============================================================

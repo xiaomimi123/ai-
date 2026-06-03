@@ -30,31 +30,41 @@ class RuleFinding:
 # ============================================================
 def check_authenticity(material: Material, ke: KeyElements,
                        eval_year: int = 2025) -> List[RuleFinding]:
-    """检查公章 / 签字 / 草稿 / 年度。"""
+    """检查公章 / 签字 / 草稿 / 年度。
+
+    V3 规则按文件类型分级：
+    - PDF 扫描件（is_scanned=True）→ 公章/签字检查（高/中风险）
+    - 普通 PDF / Word → 不检查公章签字（这些格式自带电子流转，签章在元数据里）
+    - txt / md 等纯文本 → 完全跳过格式性检查
+    草稿检测对所有格式都做。
+    """
     findings: List[RuleFinding] = []
+    ft = (material.file_type or "").lower()
+    is_text_only = ft in ("txt", "md")
+    is_scanned_pdf = ft == "pdf" and material.is_scanned
 
-    if not ke.has_official_seal:
-        findings.append(RuleFinding(
-            finding_type="真实性问题",
-            severity="高",
-            description=f"材料《{material.file_name}》未检出公章/签章关键词，"
-                        f"原件应加盖单位公章。",
-            evidence_location="全文",
-            suggestion="补盖单位公章并提供加盖公章后的扫描件原件。",
-        ))
-
-    if not ke.has_signature:
-        findings.append(RuleFinding(
-            finding_type="真实性问题",
-            severity="中",
-            description=f"材料《{material.file_name}》未检出签字关键词（如「签字」「签发」「负责人」）。",
-            evidence_location="全文",
-            suggestion="补充负责人/经办人签字。",
-        ))
+    if not is_text_only:
+        # 仅对扫描件 PDF 严格查公章/签字（纸质件标配）
+        if is_scanned_pdf and not ke.has_official_seal:
+            findings.append(RuleFinding(
+                finding_type="真实性问题",
+                severity="中",
+                description=f"材料《{material.file_name}》（扫描件）未检出公章/签章关键词。",
+                evidence_location="全文",
+                suggestion="确认原件已加盖单位公章并重新扫描清晰版本。",
+            ))
+        if is_scanned_pdf and not ke.has_signature:
+            findings.append(RuleFinding(
+                finding_type="真实性问题",
+                severity="中",
+                description=f"材料《{material.file_name}》（扫描件）未检出签字关键词。",
+                evidence_location="全文",
+                suggestion="补充负责人/经办人签字。",
+            ))
 
     if ke.is_draft:
         findings.append(RuleFinding(
-            finding_type="正式性问题",
+            finding_type="合规性问题",  # 草稿 = 形式合规问题，归入合规性
             severity="中",
             description=f"材料《{material.file_name}》疑似草稿/征求意见稿，非正式印发文件。",
             evidence_location="标题或正文开头",
@@ -66,18 +76,22 @@ def check_authenticity(material: Material, ke: KeyElements,
 
 def check_year_consistency(material: Material, ke: KeyElements,
                            eval_year: int) -> List[RuleFinding]:
+    """V3：未检出日期改为低风险（只是无法验证年度）；明确不是评价年度才高风险。"""
+    ft = (material.file_type or "").lower()
+    if ft in ("txt", "md"):
+        return []  # 纯文本完全跳过
     if ke.issue_year is None:
         return [RuleFinding(
-            finding_type="年度一致性问题",
-            severity="高",
-            description=f"材料《{material.file_name}》未检出日期，无法判定年度。",
+            finding_type="真实性问题",   # 归一为真实性
+            severity="低",                # 无法判定 ≠ 不合规，仅低风险提示
+            description=f"材料《{material.file_name}》未检出日期，无法验证是否为 {eval_year} 年度材料。",
             evidence_location="全文",
-            suggestion="在落款处补充明确的年月日。",
+            suggestion=f"在落款处补充明确的年月日，以确认 {eval_year} 年度归属。",
         )]
     if ke.issue_year != eval_year:
         return [RuleFinding(
-            finding_type="年度一致性问题",
-            severity="高",
+            finding_type="真实性问题",
+            severity="高",                # 错误年度 = 高风险
             description=f"材料《{material.file_name}》日期为 {ke.issue_year} 年，"
                         f"非评价对应年度 {eval_year} 年。",
             evidence_location=ke.issue_date or "全文",
@@ -87,22 +101,28 @@ def check_year_consistency(material: Material, ke: KeyElements,
 
 
 def check_required_elements(material: Material, ke: KeyElements) -> List[RuleFinding]:
+    """要素完整性 — 文号 / 日期。
+
+    V3：纯文本（txt/md）不要求这些办公文件元数据。
+    其它格式没有文号 / 日期只算"低风险提示"而非"中风险"。
+    """
     findings: List[RuleFinding] = []
+    ft = (material.file_type or "").lower()
+    if ft in ("txt", "md"):
+        return findings
+
+    missing = []
     if not ke.document_number:
-        findings.append(RuleFinding(
-            finding_type="完整性问题",
-            severity="中",
-            description=f"材料《{material.file_name}》未检出发文文号（如「XX发〔2025〕5号」）。",
-            evidence_location="文首",
-            suggestion="正式印发材料应有发文文号。",
-        ))
+        missing.append("发文文号")
     if not ke.issue_date:
+        missing.append("印发日期")
+    if missing:
         findings.append(RuleFinding(
             finding_type="完整性问题",
-            severity="中",
-            description=f"材料《{material.file_name}》未检出印发/签订日期。",
-            evidence_location="落款",
-            suggestion="补充印发日期（年月日）。",
+            severity="低",     # 缺要素改为低风险，少扣分
+            description=f"材料《{material.file_name}》缺少要素：{' / '.join(missing)}。",
+            evidence_location="文首/落款",
+            suggestion=f"在文档中补充 {' / '.join(missing)}。",
         ))
     return findings
 

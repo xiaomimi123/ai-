@@ -986,29 +986,16 @@ function renderOverview() {
   }
 }
 
-// 把多源信号聚合到 5 个维度
-function aggregate5Dimensions(findings, worksheet) {
+// V3：finding_type 已在后端规范化为 5 桶之一，直接按字段计数即可
+function aggregate5Dimensions(findings, _worksheet /* legacy unused */) {
   const buckets = {
     "真实性问题": 0, "完整性问题": 0, "合规性问题": 0,
     "重复性问题": 0, "匹配性问题": 0,
   };
-  const REAL = new Set(["真实性问题", "正式性问题", "年度一致性问题"]);
-  const COMPLETE = new Set(["完整性问题", "要素完整性问题"]);
   for (const f of findings || []) {
     const t = f.finding_type || "";
-    if (REAL.has(t)) buckets["真实性问题"]++;
-    else if (COMPLETE.has(t)) buckets["完整性问题"]++;
-    else buckets["合规性问题"]++; // 合规性、相关性、评分合规、复核规范、报告编报等
-  }
-  // 从工作底稿读重复性 / 匹配性
-  if (worksheet?.rows) {
-    for (const row of worksheet.rows) {
-      try {
-        const f = JSON.parse(row.material_flags || "{}");
-        if (f.duplicate) buckets["重复性问题"]++;
-        if (f.match_low) buckets["匹配性问题"]++;
-      } catch {}
-    }
+    if (t in buckets) buckets[t]++;
+    else buckets["合规性问题"]++;  // 兜底：未知类型归合规
   }
   return buckets;
 }
@@ -1375,6 +1362,9 @@ function renderFindings() {
   const d = State.taskDetail;
   const findings = d.findings;
 
+  // V3：按 5 维度批量忽略入口
+  renderFindingBulkActions(findings);
+
   const filtered = findings.filter(f => {
     const v = State.findingFilter;
     if (v === "all") return true;
@@ -1440,6 +1430,55 @@ function rectifyBadge(s) {
   const [cls, label] = map[s] || ['badge badge-gray', s];
   return `<span class="${cls}">${label}</span>`;
 }
+
+// V3：5 维度批量忽略 — 一键把同类未复核 finding 全部 ignored
+const _BULK_DIMS = ["真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题"];
+
+function renderFindingBulkActions(findings) {
+  const bar = document.getElementById("finding-bulk-actions");
+  if (!bar) return;
+  // 统计每个维度的"未复核"数量
+  const pending = findings.filter(f => (f.review_status || "pending") === "pending");
+  const counts = {};
+  for (const t of _BULK_DIMS) counts[t] = 0;
+  for (const f of pending) {
+    if (counts[f.finding_type] !== undefined) counts[f.finding_type]++;
+  }
+  const totalPending = pending.length;
+  if (totalPending === 0) {
+    bar.innerHTML = `<span class="text-muted">✓ 所有疑点已复核</span>`;
+    return;
+  }
+  const chips = _BULK_DIMS
+    .filter(t => counts[t] > 0)
+    .map(t => `<button class="btn btn-ghost btn-sm" style="font-size:12px"
+                       onclick="bulkIgnoreFindings('${t}')"
+                       title="把当前 ${counts[t]} 条未复核「${t}」一键标记为忽略">
+                   忽略所有 ${t}（${counts[t]}）
+               </button>`).join("");
+  bar.innerHTML = `<span class="text-muted">共 ${totalPending} 条未复核：</span> ${chips}`;
+}
+
+window.bulkIgnoreFindings = async function(dim) {
+  if (!confirm(`确定把所有「${dim}」未复核疑点一键标为"已忽略"？\n\n忽略后这类问题不再扣分。`)) return;
+  const targets = State.taskDetail.findings.filter(
+    f => f.finding_type === dim && (f.review_status || "pending") === "pending"
+  );
+  if (!targets.length) { toast("没有未复核的此类条目"); return; }
+  toast(`批量处理 ${targets.length} 条…`);
+  let ok = 0;
+  for (const f of targets) {
+    try {
+      await api(`/findings/${f.id}/review`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ignored", note: `批量忽略：${dim}` }),
+      });
+      ok++;
+    } catch (e) { console.warn("ignore failed", f.id, e.message); }
+  }
+  toast(`✓ 已忽略 ${ok} 条「${dim}」`, "success");
+  await loadTaskWorkspace(State.taskId);
+};
 
 function renderFindingDetail(f) {
   const box = document.getElementById("finding-detail");

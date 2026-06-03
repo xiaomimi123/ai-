@@ -175,14 +175,14 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
 
             related = _materials_for_indicator(materials, indicator)
             if not related:
-                # 该指标完全无材料 → 产生一条"完整性"finding 提示缺失
+                # V3：未上传材料 → 低风险提示（不再按中风险扣 25%，改为只扣 10%）
                 db.add(Finding(
                     task_id=task.id,
                     material_id=None,
                     indicator_id=indicator.id,
                     check_item_id=None,
                     finding_type="完整性问题",
-                    severity="中",
+                    severity="低",
                     description=f"指标【{indicator.indicator_code} {indicator.name}】未上传任何佐证材料。",
                     evidence_location="—",
                     legal_basis=indicator.deduct_rules or "",
@@ -219,6 +219,8 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
             db.commit()
 
         db.flush()
+        # V3：去重聚合 — 同 (material, indicator, type) 下只保留最严重 1 条
+        _dedupe_findings(db, task.id)
         task.progress_text = "汇总评分中…"
         db.commit()
 
@@ -260,6 +262,34 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
     return task
 
 
+# V3：所有 finding_type 统一归类到 5 种（不再有"正式性""年度一致性""相关性"等细分）
+_TYPE_CANONICAL_MAP = {
+    "真实性问题": "真实性问题",
+    "正式性问题": "真实性问题",
+    "年度一致性问题": "真实性问题",
+    "完整性问题": "完整性问题",
+    "要素完整性问题": "完整性问题",
+    "合规性问题": "合规性问题",
+    "相关性问题": "合规性问题",
+    "评分合规问题": "合规性问题",
+    "复核规范问题": "合规性问题",
+    "报告编报问题": "合规性问题",
+    "重复性问题": "重复性问题",
+    "匹配性问题": "匹配性问题",
+}
+
+_VALID_TYPES = {"真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题"}
+
+
+def canonical_finding_type(raw: str) -> str:
+    """把任何 raw finding_type 映射到 5 种规范类型之一。"""
+    if not raw:
+        return "合规性问题"
+    if raw in _VALID_TYPES:
+        return raw
+    return _TYPE_CANONICAL_MAP.get(raw, "合规性问题")
+
+
 def _to_finding(task_id: int, material_id: Optional[int],
                 indicator: Optional[Indicator],
                 fr, source: str) -> Finding:
@@ -283,7 +313,7 @@ def _to_finding(task_id: int, material_id: Optional[int],
         return Finding(
             task_id=task_id, material_id=material_id, indicator_id=ind_id,
             check_item_id=fr.check_item_id,
-            finding_type=fr.finding_type, severity=fr.severity,
+            finding_type=canonical_finding_type(fr.finding_type), severity=fr.severity,
             description=fr.description, evidence_location=fr.evidence_location,
             legal_basis=_enrich(fr.legal_basis), suggestion=fr.suggestion,
             source=source,
@@ -292,12 +322,49 @@ def _to_finding(task_id: int, material_id: Optional[int],
         return Finding(
             task_id=task_id, material_id=material_id, indicator_id=ind_id,
             check_item_id=None,
-            finding_type=fr.finding_type, severity=fr.severity,
+            finding_type=canonical_finding_type(fr.finding_type), severity=fr.severity,
             description=fr.description, evidence_location=fr.evidence_location,
             legal_basis=_enrich(fr.legal_basis), suggestion=fr.suggestion,
             source=source,
         )
     raise TypeError(f"未知 finding 类型：{type(fr)}")
+
+
+SEVERITY_ORDER = {"高": 0, "中": 1, "低": 2}
+
+
+def _dedupe_findings(db: Session, task_id: int) -> int:
+    """同 (material_id, indicator_id, finding_type) 去重，保留最严重的 1 条。
+
+    返回删除的条数。会把被删条目的关键描述追加到保留条的 description。
+    """
+    findings = db.query(Finding).filter(Finding.task_id == task_id).all()
+    by_key: dict[tuple, list[Finding]] = {}
+    for f in findings:
+        key = (f.material_id, f.indicator_id, f.finding_type)
+        by_key.setdefault(key, []).append(f)
+
+    deleted = 0
+    for key, group in by_key.items():
+        if len(group) <= 1:
+            continue
+        group.sort(key=lambda f: SEVERITY_ORDER.get(f.severity, 9))
+        keep = group[0]
+        merged_extras = []
+        for dup in group[1:]:
+            if dup.description and dup.description not in (keep.description or ""):
+                # 只保留前 30 字摘要
+                snippet = dup.description.strip().split("。")[0][:30]
+                if snippet:
+                    merged_extras.append(snippet)
+            db.delete(dup)
+            deleted += 1
+        if merged_extras:
+            extra = "；".join(merged_extras[:2])  # 最多附 2 条摘要
+            keep.description = f"{keep.description}\n（同时检出：{extra}）"
+    if deleted:
+        db.flush()
+    return deleted
 
 
 def _build_stats(materials: List[Material], findings: List[Finding],

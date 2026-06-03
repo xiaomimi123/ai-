@@ -290,6 +290,43 @@ def build_worksheet_draft(db: Session, task: AuditTask) -> Worksheet:
             "match_low":  match_ratio < MATCH_THRESHOLD,
         }
 
+        # V3：material_flags 触发的"重复性 / 匹配性"Finding 也写入数据库
+        # （让维度分布统计和"按维度批量忽略"能命中）
+        if is_dup:
+            # 先看是否已存在同 indicator 的重复性问题
+            existed = any(f.finding_type == "重复性问题" for f in ind_findings)
+            if not existed:
+                from app.models import Finding as _F
+                dup_finding = _F(
+                    task_id=task.id, material_id=None, indicator_id=ind.id,
+                    check_item_id=None,
+                    finding_type="重复性问题", severity="中",
+                    description=f"指标【{ind.indicator_code} {ind.name}】下的材料与其他任务/单位存在重复，疑似抄送。",
+                    evidence_location="材料指纹",
+                    legal_basis="审计材料应为本单位真实产出，跨单位重复材料不应作为独立佐证。",
+                    suggestion="核实该材料的原始来源；若确为本单位材料应提供说明。",
+                    source="rule",
+                )
+                db.add(dup_finding)
+                ind_findings.append(dup_finding)
+        if match_ratio < MATCH_THRESHOLD:
+            existed_match = any(f.finding_type == "匹配性问题" for f in ind_findings)
+            if not existed_match:
+                from app.models import Finding as _F
+                match_finding = _F(
+                    task_id=task.id, material_id=None, indicator_id=ind.id,
+                    check_item_id=None,
+                    finding_type="匹配性问题", severity="低",
+                    description=f"指标【{ind.indicator_code} {ind.name}】上传材料与"
+                                f"指标要求的材料类型匹配率仅 {match_ratio:.0%}（阈值 70%）。",
+                    evidence_location="—",
+                    legal_basis=f"指标要求材料：{ind.required_materials or '查看指标定义'}",
+                    suggestion="补充更对口的佐证材料，或确认绑定到正确指标。",
+                    source="rule",
+                )
+                db.add(match_finding)
+                ind_findings.append(match_finding)
+
         row = WorksheetRow(
             worksheet_id=ws.id,
             indicator_id=ind.id,
@@ -298,7 +335,7 @@ def build_worksheet_draft(db: Session, task: AuditTask) -> Worksheet:
             audited_score=audited,
             audit_finding_text=_build_audit_text(ind, ind_findings, deducted),
             material_flags=json.dumps(flags, ensure_ascii=False),
-            linked_finding_ids=json.dumps([f.id for f in ind_findings], ensure_ascii=False),
+            linked_finding_ids=json.dumps([f.id for f in ind_findings if f.id], ensure_ascii=False),
         )
         db.add(row)
 
