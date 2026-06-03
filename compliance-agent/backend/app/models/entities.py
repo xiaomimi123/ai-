@@ -209,6 +209,11 @@ class AuditTask(Base):
     findings: Mapped[List["Finding"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )
+    worksheet: Mapped[Optional["Worksheet"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class Material(Base):
@@ -323,6 +328,7 @@ class Worksheet(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
+    task: Mapped["AuditTask"] = relationship(back_populates="worksheet")
     rows: Mapped[List["WorksheetRow"]] = relationship(
         back_populates="worksheet",
         cascade="all, delete-orphan",
