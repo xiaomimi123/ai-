@@ -97,6 +97,24 @@ def get_task_detail(task_id: int,
     if not _user_can_see_task(user, task):
         raise HTTPException(403, "无权查看此任务")
     unit = db.get(AuditUnit, task.unit_id)
+
+    # 老任务的 stats 里没 scoring → 临时回填一次（不写回 DB，纯展示）
+    if task.status in ("ai_done", "reviewing", "finalized", "archived"):
+        import json as _json
+        try:
+            stats = _json.loads(task.stats or "{}")
+        except Exception:
+            stats = {}
+        if "scoring" not in stats:
+            try:
+                from app.services.scoring_service import compute_task_scoring
+                stats["scoring"] = compute_task_scoring(db, task)
+                task.stats = _json.dumps(stats, ensure_ascii=False)
+                db.commit()
+            except Exception as exc:
+                print(f"[scoring backfill] {exc}")
+                db.rollback()
+
     return TaskDetailOut(
         task=AuditTaskOut.model_validate(task),
         unit=AuditUnitOut.model_validate(unit),

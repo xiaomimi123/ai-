@@ -19,6 +19,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.models import AuditTask, AuditUnit, Finding, Indicator, Material
+from app.services.scoring_service import compute_task_scoring
 
 
 def build_report_docx(db: Session, task: AuditTask) -> bytes:
@@ -31,6 +32,7 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
     unit: AuditUnit = task.unit
     materials: List[Material] = list(task.materials)
     findings: List[Finding] = list(task.findings)
+    scoring = compute_task_scoring(db, task)
 
     doc = Document()
 
@@ -114,6 +116,31 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
        f"AI 共检出 {len(findings)} 条疑点。")
     _label_value("总体结论", conclusion)
 
+    # ─── 评分卡片（功能 3 新增）───
+    if scoring and scoring["total_max"] > 0:
+        doc.add_paragraph()
+        _h("综合评分", level=2, size=14)
+        score_para = doc.add_paragraph()
+        score_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r1 = score_para.add_run(f"{scoring['total_score']}")
+        _set_cn_font(r1, name="黑体", size=40, bold=True)
+        r2 = score_para.add_run(f"  /  {scoring['total_max']} 分")
+        _set_cn_font(r2, name="黑体", size=18)
+
+        grade_para = doc.add_paragraph()
+        grade_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r3 = grade_para.add_run(f"得分率 {scoring['score_pct']}%　·　等级")
+        _set_cn_font(r3, size=12)
+        r4 = grade_para.add_run(f"「{scoring['grade']}」")
+        _set_cn_font(r4, name="黑体", size=14, bold=True)
+        doc.add_paragraph()
+        _p(
+            f"评分规则：高风险扣指标满分 50%，中风险扣 25%，低风险扣 10%；"
+            f"已忽略的发现不扣分，已调整的按 50% 计。"
+            f"等级阈值：优 ≥90 / 良 ≥80 / 中 ≥60 / 差 <60。",
+            size=9,
+        )
+
     # 风险分布表
     _h("问题分布统计", level=2, size=14)
     sev_counter = Counter(f.severity for f in findings)
@@ -163,6 +190,45 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
     _p("（说明：本报告由 AI 核查引擎自动生成，作为辅助审查依据，"
        "最终结论须经人工复核确认。AI 核查的是文本内容合规性，"
        "原件真实性需结合现场核查或档案比对确认。）", size=10)
+
+    # ─── 评分汇总表（按指标）───
+    if scoring and scoring["indicators"]:
+        doc.add_paragraph()
+        _h("评分汇总表（按指标）", level=2, size=14)
+        rows_data = scoring["indicators"]
+        # 表头 + 数据行
+        table = doc.add_table(rows=1 + len(rows_data) + 1, cols=6)
+        table.style = "Light Grid Accent 1"
+        headers = ["指标编号", "名称", "满分", "扣分", "得分", "问题数"]
+        for i, h in enumerate(headers):
+            cell = table.rows[0].cells[i]
+            cell.text = h
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    _set_cn_font(r, name="黑体", size=10, bold=True)
+        for row_i, item in enumerate(rows_data, 1):
+            row = table.rows[row_i]
+            row.cells[0].text = item["indicator_code"]
+            row.cells[1].text = _truncate(item["name"], 30)
+            row.cells[2].text = str(item["max_score"])
+            row.cells[3].text = str(item["deducted"])
+            row.cells[4].text = str(item["actual_score"])
+            row.cells[5].text = str(item["findings_total"])
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    for r in p.runs:
+                        _set_cn_font(r, size=10)
+        # 合计行
+        total_row = table.rows[-1]
+        total_row.cells[0].text = "合计"
+        total_row.cells[2].text = str(scoring["total_max"])
+        total_row.cells[3].text = str(scoring["total_deducted"])
+        total_row.cells[4].text = str(scoring["total_score"])
+        total_row.cells[5].text = str(sum(it["findings_total"] for it in rows_data))
+        for cell in total_row.cells:
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    _set_cn_font(r, name="黑体", size=10, bold=True)
 
     doc.add_page_break()
 
@@ -217,9 +283,18 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
             if ind is None:
                 continue
             # 指标小标题
-            _h(f"指标 {ind.indicator_code} · {ind.name}", level=2, size=13)
+            # 从评分明细里找该指标的得分
+            ind_score = next((s for s in scoring.get("indicators", [])
+                              if s["indicator_id"] == ind.id), None)
+            score_suffix = ""
+            if ind_score:
+                score_suffix = f"  （得分 {ind_score['actual_score']} / {ind_score['max_score']} 分）"
+            _h(f"指标 {ind.indicator_code} · {ind.name}{score_suffix}", level=2, size=13)
             _label_value("分类", f"{ind.level} / {ind.category} / {ind.subcategory}")
             _label_value("满分", str(ind.max_score))
+            if ind_score:
+                _label_value("扣分", f"{ind_score['deducted']} 分")
+                _label_value("实际得分", f"{ind_score['actual_score']} 分")
             _label_value("问题数", f"{len(ind_findings)} 条")
             doc.add_paragraph()
 

@@ -565,6 +565,9 @@ function renderOverview() {
   `;
   document.getElementById("tw-summary").textContent = d.task.summary || "尚未开始 AI 核查。";
 
+  // 评分卡（从 task.stats 解析）
+  renderScoreCard(d.task);
+
   const byType = {};
   findings.forEach(f => byType[f.finding_type] = (byType[f.finding_type] || 0) + 1);
   const breakdown = document.getElementById("tw-dimension-breakdown");
@@ -577,6 +580,79 @@ function renderOverview() {
         <div style="font-size:22px;font-weight:700;margin-top:4px;letter-spacing:-0.02em">${v}</div>
       </div>`).join("");
   }
+}
+
+function renderScoreCard(task) {
+  let stats = {};
+  try { stats = JSON.parse(task.stats || "{}"); } catch {}
+  const scoring = stats.scoring;
+  const container = document.getElementById("tw-score-card");
+  if (!container) return;
+  if (!scoring || !scoring.total_max) {
+    container.innerHTML = "";
+    container.classList.add("hidden");
+    return;
+  }
+  const gradeBadge = {
+    "优": "badge badge-green",
+    "良": "badge badge-blue",
+    "中": "badge badge-orange",
+    "差": "badge badge-red",
+  }[scoring.grade] || "badge badge-gray";
+
+  container.classList.remove("hidden");
+  container.innerHTML = `
+    <div class="card" style="background:linear-gradient(135deg,#fafafa,#f0f0f2);border:1px solid var(--border)">
+      <div class="flex items-center justify-between" style="flex-wrap:wrap;gap:16px">
+        <div>
+          <div class="text-xs text-faint" style="letter-spacing:0.04em;font-family:var(--font-mono)">SCORE</div>
+          <div style="font-size:48px;font-weight:700;letter-spacing:-0.03em;line-height:1;margin-top:6px">
+            ${scoring.total_score}
+            <span style="font-size:20px;color:var(--text-tertiary);font-weight:500"> / ${scoring.total_max} 分</span>
+          </div>
+          <div class="mt-2" style="font-size:14px;color:var(--text-secondary)">
+            得分率 <b>${scoring.score_pct}%</b>　·　等级 <span class="${gradeBadge}" style="font-size:13px">${scoring.grade}</span>
+          </div>
+        </div>
+        <button class="btn btn-ghost" id="tw-score-toggle">展开明细 ▾</button>
+      </div>
+      <div id="tw-score-detail" class="hidden" style="margin-top:16px;border-top:1px solid var(--divider);padding-top:16px">
+        <table class="table" style="font-size:12px">
+          <thead><tr>
+            <th>指标编号</th><th>名称</th><th>满分</th><th>扣分</th><th>得分</th><th>问题数</th>
+          </tr></thead>
+          <tbody>
+            ${scoring.indicators.map(i => `<tr>
+              <td><span class="code-id">${esc(i.indicator_code)}</span></td>
+              <td>${esc(i.name)}</td>
+              <td class="table-mono">${i.max_score}</td>
+              <td class="table-mono ${i.deducted > 0 ? "" : "text-faint"}" style="${i.deducted > 0 ? "color:var(--red)" : ""}">${i.deducted}</td>
+              <td class="table-mono" style="font-weight:600">${i.actual_score}</td>
+              <td>${i.findings_total > 0
+                ? `<span class="badge badge-orange">${i.findings_total}</span>`
+                : '<span class="text-faint">0</span>'}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+        <div class="text-xs text-faint mt-3">
+          扣分规则：高风险扣指标满分 50%，中风险扣 25%，低风险扣 10%；
+          已忽略的发现不扣分，已调整的按 50% 计。等级阈值：优 ≥90 / 良 ≥80 / 中 ≥60 / 差 <60。
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("tw-score-toggle").addEventListener("click", () => {
+    const det = document.getElementById("tw-score-detail");
+    const btn = document.getElementById("tw-score-toggle");
+    if (det.classList.contains("hidden")) {
+      det.classList.remove("hidden");
+      btn.textContent = "收起明细 ▴";
+    } else {
+      det.classList.add("hidden");
+      btn.textContent = "展开明细 ▾";
+    }
+  });
 }
 
 function renderMaterials() {

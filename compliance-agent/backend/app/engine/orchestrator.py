@@ -192,9 +192,18 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
 
         db.flush()
 
-        # 聚合统计
+        # 聚合统计 + 评分
         all_findings = db.query(Finding).filter(Finding.task_id == task.id).all()
         stats = _build_stats(materials, all_findings, target_indicators, indicators_checked)
+
+        # 附加评分汇总（功能 3）
+        from app.services.scoring_service import compute_task_scoring
+        try:
+            scoring = compute_task_scoring(db, task)
+            stats["scoring"] = scoring
+        except Exception as exc:
+            print(f"[scoring] 计算失败: {exc}")
+
         task.stats = json.dumps(stats, ensure_ascii=False)
         task.summary = _build_summary(stats, llm_available)
         task.status = "ai_done"
@@ -274,15 +283,21 @@ def _build_summary(stats: dict, llm_used: bool) -> str:
     indicators_total = stats.get("indicators_total", 0)
     indicators_checked = stats.get("indicators_checked", 0)
     no_material = stats.get("indicators_no_material", 0)
+    scoring = stats.get("scoring") or {}
 
     coverage = f"（覆盖 {indicators_checked}/{indicators_total} 项指标"
     if no_material:
         coverage += f"，{no_material} 项指标无材料"
     coverage += "）"
 
+    score_part = ""
+    if scoring and scoring.get("total_max"):
+        score_part = (f" · 评分 {scoring['total_score']}/{scoring['total_max']} "
+                      f"({scoring['score_pct']}%，等级 {scoring['grade']})")
+
     if total == 0:
-        return f"AI 初核完成，未发现问题{coverage}。"
+        return f"AI 初核完成，未发现问题{coverage}{score_part}。"
     sev = stats["by_severity"]
     suffix = "" if llm_used else "（LLM 未配置 API Key，仅运行了刚性规则）"
     return (f"AI 初核完成，共 {total} 条疑点："
-            f"高 {sev['高']} / 中 {sev['中']} / 低 {sev['低']}{coverage}{suffix}")
+            f"高 {sev['高']} / 中 {sev['中']} / 低 {sev['低']}{coverage}{score_part}{suffix}")
