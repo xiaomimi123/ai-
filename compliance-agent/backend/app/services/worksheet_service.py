@@ -33,17 +33,18 @@ from app.models import (
 from app.services.scoring_service import REVIEW_WEIGHT, SEVERITY_DEDUCT_RATIO
 
 
-# 7 对 14 项复选框 keys（写死的元数据，对应底稿 J 列模板顺序）
+# 新底稿模板 5 对 10 项（按新版列顺序）
 FLAG_PAIRS: List[tuple[str, str, str, str]] = [
     # (pos_key, pos_label, neg_key, neg_label)
-    ("real",       "材料真实",            "fake",          "材料虚假"),
-    ("relevant",   "与指标相关",          "irrelevant",    "与指标无关"),
-    ("effective",  "材料有效",            "ineffective",   "材料无效"),
+    ("real",       "材料真实可靠",        "fake",          "材料涉嫌造假"),
     ("complete",   "材料完整",            "incomplete",    "材料不完整"),
-    ("compliant",  "制度内容合法合规",     "non_compliant", "制度内容不合规"),
-    ("duplicate",  "材料与其他单位重复",   "unique",        "材料与其他单位不重复"),
-    ("match_low",  "材料匹配度低",        "match_high",    "材料匹配度高"),
+    ("compliant",  "材料内容合法合规",    "non_compliant", "材料内容可能违法违规"),
+    ("unique",     "材料与其他单位不重复", "duplicate",     "材料与其他单位重复"),
+    ("match_high", "材料匹配度高",        "match_low",     "材料匹配度低"),
 ]
+
+# 旧字段保留兼容（不在 UI 展示，仅 DB 仍写入用于回溯）
+LEGACY_FLAG_KEYS = ("relevant", "irrelevant", "effective", "ineffective")
 
 
 MATCH_THRESHOLD = 0.70  # ≥70% 算匹配度高

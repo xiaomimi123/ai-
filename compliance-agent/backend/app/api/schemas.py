@@ -128,6 +128,7 @@ class WorksheetRowOut(BaseModel):
     original_score: float
     audited_score: float
     audit_finding_text: str
+    adjustment_note: str = ""
     material_flags: str
     linked_finding_ids: str
 

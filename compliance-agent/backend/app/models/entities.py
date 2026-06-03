@@ -356,7 +356,8 @@ class WorksheetRow(Base):
     serial: Mapped[int] = mapped_column(Integer, default=0)           # 1..55 显示序号
     original_score: Mapped[float] = mapped_column(default=0.0)        # 核查前得分（自评分）
     audited_score: Mapped[float] = mapped_column(default=0.0)         # 核查后得分（AI 阅卷）
-    audit_finding_text: Mapped[str] = mapped_column(Text, default="") # 核查情况说明（≤150 字）
+    audit_finding_text: Mapped[str] = mapped_column(Text, default="") # 核查情况说明（兼容旧版）
+    adjustment_note: Mapped[str] = mapped_column(Text, default="")    # 调整得分说明（V2 新版底稿模板）
     # 7 对 14 项复选框 JSON：{real,fake,relevant,irrelevant,effective,ineffective,
     # complete,incomplete,compliant,non_compliant,duplicate,unique,match_high,match_low}
     material_flags: Mapped[str] = mapped_column(Text, default="{}")

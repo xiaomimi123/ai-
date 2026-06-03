@@ -37,6 +37,7 @@ _EXTRA_COLUMNS: list[tuple[str, str, str]] = [
     ("audit_tasks", "progress_total", "INTEGER NOT NULL DEFAULT 0"),
     ("audit_tasks", "progress_text", "VARCHAR(256) NOT NULL DEFAULT ''"),
     ("audit_tasks", "fast_mode", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("worksheet_rows", "adjustment_note", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

@@ -182,13 +182,22 @@ def _heuristic_check_items(text: str) -> list[dict]:
 def extract_indicators(db: Session, file_name: str, content: bytes,
                        max_chars: int = 12000) -> tuple[list[dict], str]:
     """从办公文件抽取指标。返回 (条目列表, 来源说明)。"""
+    # 1) Excel 优先：按列名匹配的快速路径（不依赖 LLM，0 token）
+    if file_name.lower().endswith(".xlsx"):
+        try:
+            items = _excel_by_header_names(content)
+            if items:
+                return items, f"Excel 表头自动识别（共 {len(items)} 条）"
+        except Exception as exc:
+            print(f"[extract] Excel 表头快速识别失败，回退 LLM：{exc}")
+
+    # 2) LLM 抽取
     text = _parse_to_text(file_name, content)
     if not text.strip():
         raise ValueError("文件解析后为空，可能是扫描件或受损")
 
     llm = get_llm_client(db)
     if not isinstance(llm, StubLLMClient):
-        # 优先 LLM 抽取
         try:
             prompt = INDICATOR_USER_TMPL.format(limit=max_chars, text=text[:max_chars])
             data = llm.extract_json(prompt, system=SYSTEM_PROMPT_INDICATORS, max_tokens=8000)
@@ -199,9 +208,113 @@ def extract_indicators(db: Session, file_name: str, content: bytes,
         except Exception as exc:
             print(f"[extract] LLM 抽取失败，回退正则：{exc}")
 
-    # 兜底
+    # 3) 兜底
     items = _heuristic_indicators(text)
     return items, f"正则启发式抽取（共 {len(items)} 条，建议配置 LLM API Key 获得更准结果）"
+
+
+# ----- Excel 表头识别（无 LLM 直读） -----
+HEADER_ALIASES: dict[str, list[str]] = {
+    "indicator_code": ["编号", "指标编号", "代码", "code"],
+    "category":       ["指标分类", "分类", "类别"],
+    "name":           ["指标名称", "名称", "评价项"],
+    "audit_points":   ["核查要点", "核查内容", "审查要点", "考核要点"],
+    "deduct_rules":   ["扣分规则", "扣分细则", "评分规则", "评分细则"],
+    "max_score":      ["标准分值", "满分", "分值", "标准分"],
+}
+
+
+def _normalize_header(s) -> str:
+    return str(s or "").strip().replace(" ", "")
+
+
+def _excel_by_header_names(content: bytes) -> list[dict]:
+    """打开 xlsx，第 2 行（或第 1 行）找到表头，按列名识别字段并提取每行。
+
+    - 自动跳过"工作底稿"类标题（A1:J1 大标题）
+    - 找到表头后，遍历数据行直到 A 列变为非数字（合计/签名）
+    """
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    wb = load_workbook(BytesIO(content), data_only=True)
+    ws = wb.worksheets[0]
+    # 找表头行：扫描前 5 行，看哪一行包含"指标名称""核查要点"等关键词
+    header_row = None
+    for r in range(1, 6):
+        cells = [_normalize_header(ws.cell(r, c).value) for c in range(1, ws.max_column + 1)]
+        if any("指标名称" in c or "评价项" in c for c in cells) and \
+           any("核查要点" in c or "扣分规则" in c or "评分规则" in c for c in cells):
+            header_row = r
+            break
+    if header_row is None:
+        return []
+
+    # 建 字段名 → 列号
+    col_for: dict[str, int] = {}
+    headers = [_normalize_header(ws.cell(header_row, c).value) for c in range(1, ws.max_column + 1)]
+    for field, aliases in HEADER_ALIASES.items():
+        for col_idx, h in enumerate(headers, start=1):
+            if not h:
+                continue
+            for alias in aliases:
+                if alias in h:
+                    col_for.setdefault(field, col_idx)
+                    break
+
+    if "name" not in col_for or "max_score" not in col_for:
+        return []  # 必要字段没找到
+
+    # 处理 B 列纵向合并（分类列）：补全空 cell
+    cat_map: dict[int, str] = {}
+    if "category" in col_for:
+        cat_col = col_for["category"]
+        for mr in ws.merged_cells.ranges:
+            if mr.min_col == cat_col and mr.max_col == cat_col:
+                v = ws.cell(mr.min_row, cat_col).value
+                for r in range(mr.min_row, mr.max_row + 1):
+                    cat_map[r] = v
+
+    items: list[dict] = []
+    serial_counter = 0
+    for r in range(header_row + 1, ws.max_row + 1):
+        a = ws.cell(r, 1).value
+        # 遇到"合计""被核查单位"等终止行就退
+        if a in (None, ""):
+            # 允许序号留空但中间有数据
+            if not ws.cell(r, col_for["name"]).value:
+                continue
+        if isinstance(a, str) and ("合计" in a or "被核查" in a or "签名" in a or "代码" in a):
+            break
+
+        name = ws.cell(r, col_for["name"]).value
+        if not name:
+            continue
+        ms = ws.cell(r, col_for["max_score"]).value
+        try:
+            ms = float(ms)
+        except (TypeError, ValueError):
+            ms = 0.0
+        serial_counter += 1
+
+        cat = cat_map.get(r) or ws.cell(r, col_for["category"]).value if "category" in col_for else ""
+        items.append({
+            "indicator_code": f"I-{serial_counter:02d}",
+            "level": "单位",
+            "category": str(cat or "").strip(),
+            "subcategory": "",
+            "name": str(name).strip(),
+            "description": "",
+            "max_score": ms,
+            "audit_points": str(ws.cell(r, col_for["audit_points"]).value or "").strip()
+                if "audit_points" in col_for else "",
+            "deduct_rules": str(ws.cell(r, col_for["deduct_rules"]).value or "").strip()
+                if "deduct_rules" in col_for else "",
+            "common_deductions": "",
+            "required_materials": [],
+        })
+
+    return items
 
 
 # ============================================================

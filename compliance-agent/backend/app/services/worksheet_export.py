@@ -35,13 +35,14 @@ WHITE = Font(color="FFFFFFFF", bold=True)
 THIN = Side(style="thin", color="FFBFBFBF")
 ALL_BORDERS = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
+# 新底稿模板列顺序（V3 标准）
 HEADERS = [
-    "序号", "指标分类", "指标名称", "标准分值",
-    "核查前得分", "核查后得分",
-    "核查要点", "扣分规则",
-    "核查情况说明", "佐证材料核查结果",
+    "序号", "指标分类", "指标名称",
+    "核查要点", "扣分规则", "佐证材料核查结果",
+    "标准分值", "核查前得分", "核查后得分",
+    "调整得分说明",
 ]
-COL_WIDTHS = [8, 18, 28, 10, 12, 12, 50, 50, 36, 50]
+COL_WIDTHS = [6, 16, 22, 50, 50, 38, 10, 12, 12, 36]
 
 
 def _format_flag_cell(flags: dict) -> str:
@@ -125,19 +126,19 @@ def build_worksheet_xlsx(db: Session, task: AuditTask, worksheet: Worksheet) -> 
             wrow.serial,
             cat_text,
             ind.name,
+            ind.audit_points or "",
+            ind.deduct_rules or "",
+            _format_flag_cell(flags),
             float(ind.max_score or 0),
             float(wrow.original_score or 0),
             float(wrow.audited_score or 0),
-            ind.audit_points or "",
-            ind.deduct_rules or "",
-            wrow.audit_finding_text or "",
-            _format_flag_cell(flags),
+            wrow.adjustment_note or "",
         ]
         _set_row(ws, cur_r, row_vals)
         ws.row_dimensions[cur_r].height = 95
 
-        # 内容左对齐更友好
-        for col in (3, 7, 8, 9, 10):
+        # 内容左对齐更友好（名称/要点/规则/材料判定/调整说明）
+        for col in (3, 4, 5, 6, 10):
             c = ws.cell(row=cur_r, column=col)
             c.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
@@ -160,17 +161,19 @@ def build_worksheet_xlsx(db: Session, task: AuditTask, worksheet: Worksheet) -> 
                 horizontal="center", vertical="center", wrap_text=True,
             )
 
-    # 合计行
+    # 合计行（新列顺序：合计位于 A:F 合并，标准分/前/后/调整说明在 G H I J）
     _set_row(ws, cur_r, [
-        "合计", "", "", round(total_max, 2),
-        round(total_before, 2), round(total_after, 2),
-        "", "", "", "",
+        "合计", "", "", "", "", "",
+        round(total_max, 2),
+        round(total_before, 2),
+        round(total_after, 2),
+        "",
     ], subtotal=True)
-    ws.merge_cells(start_row=cur_r, end_row=cur_r, start_column=1, end_column=3)
+    ws.merge_cells(start_row=cur_r, end_row=cur_r, start_column=1, end_column=6)
     ws.row_dimensions[cur_r].height = 28
     cur_r += 1
 
-    # 签名 5 行
+    # 签名 5 行（label 占 A:C，value 占 D:J）
     def _label_row(label: str, value: str = ""):
         nonlocal cur_r
         ws.cell(row=cur_r, column=1, value=label)

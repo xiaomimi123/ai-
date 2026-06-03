@@ -326,6 +326,7 @@ def rebuild_task_worksheet(task_id: int,
 class WorksheetRowPatch(BaseModel):
     audited_score: Optional[float] = None
     audit_finding_text: Optional[str] = None
+    adjustment_note: Optional[str] = None
     material_flags: Optional[dict] = None
     unit_name: Optional[str] = None
     unit_code: Optional[str] = None
@@ -373,6 +374,10 @@ def patch_worksheet_row(task_id: int, row_id: int,
         if row.audit_finding_text != req.audit_finding_text:
             changes.append("audit_finding_text 已更新")
             row.audit_finding_text = req.audit_finding_text[:2000]
+    if req.adjustment_note is not None:
+        if row.adjustment_note != req.adjustment_note:
+            changes.append("adjustment_note 已更新")
+            row.adjustment_note = req.adjustment_note[:2000]
     if req.material_flags is not None:
         import json as _json
         new_flags = _json.dumps(req.material_flags, ensure_ascii=False)
@@ -407,6 +412,7 @@ def patch_worksheet_row(task_id: int, row_id: int,
         "id": row.id, "serial": row.serial,
         "audited_score": row.audited_score,
         "audit_finding_text": row.audit_finding_text,
+        "adjustment_note": row.adjustment_note,
         "material_flags": row.material_flags,
         "worksheet_status": ws.status,
     }

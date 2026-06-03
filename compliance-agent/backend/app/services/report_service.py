@@ -303,13 +303,15 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
             _label_value("分类", f"{ind.level} / {ind.category} / {ind.subcategory}")
             _label_value("满分", str(ind.max_score))
 
-            # V2：优先用工作底稿的审计师评分 / 评语
+            # V2/V3：优先用工作底稿的审计师评分 / 评语
             ws_row = ws_rows_by_ind.get(ind.id)
             if ws_row:
                 _label_value("核查前得分（自评）", f"{ws_row.original_score} 分")
                 _label_value("核查后得分（复核）", f"{ws_row.audited_score} 分")
-                if ws_row.audit_finding_text:
-                    _label_value("审计师评语", ws_row.audit_finding_text)
+                # 新版优先用 adjustment_note（调整得分说明）
+                note = ws_row.adjustment_note or ws_row.audit_finding_text
+                if note:
+                    _label_value("审计师说明", note)
             else:
                 if ind_score:
                     _label_value("扣分", f"{ind_score['deducted']} 分")

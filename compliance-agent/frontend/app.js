@@ -664,14 +664,13 @@ function renderSubtab() {
 }
 
 // 7 对复选框标签
+// 新底稿模板 5 对 10 项（与后端 FLAG_PAIRS 同步）
 const WS_FLAG_PAIRS = [
-  ["real", "材料真实", "fake", "材料虚假"],
-  ["relevant", "与指标相关", "irrelevant", "与指标无关"],
-  ["effective", "材料有效", "ineffective", "材料无效"],
-  ["complete", "材料完整", "incomplete", "材料不完整"],
-  ["compliant", "制度合规", "non_compliant", "制度不合规"],
-  ["duplicate", "跨单位重复", "unique", "未跨单位重复"],
-  ["match_high", "匹配度高", "match_low", "匹配度低"],
+  ["real",       "材料真实可靠",     "fake",          "材料涉嫌造假"],
+  ["complete",   "材料完整",         "incomplete",    "材料不完整"],
+  ["compliant",  "材料合法合规",     "non_compliant", "可能违法违规"],
+  ["unique",     "未跨单位重复",     "duplicate",     "跨单位重复"],
+  ["match_high", "材料匹配度高",     "match_low",     "材料匹配度低"],
 ];
 
 function renderFlagBadges(flagsObj) {
@@ -717,27 +716,34 @@ async function loadWorksheet() {
     const cat = ind.subcategory ? `${ind.category}<br/><span class="text-xs text-muted">${ind.subcategory}</span>` : (ind.category || "");
     const max = +ind.max_score || 0;
 
-    // 可编辑：得分 number input；说明 textarea；复选框 checkbox 单点切换
+    // 可编辑：得分 number input；调整说明 textarea
     const scoreInput = isLocked
       ? `<strong>${(r.audited_score ?? 0).toFixed(2)}</strong>`
       : `<input type="number" min="0" max="${max}" step="0.25" value="${(r.audited_score ?? 0).toFixed(2)}"
             class="ws-cell-edit ws-score" data-row-id="${r.id}" data-max="${max}"
-            style="width:64px;text-align:center;padding:4px;font-weight:600" />`;
-    const textInput = isLocked
-      ? `<div class="ws-cell-readonly">${escapeHtml(r.audit_finding_text || "")}</div>`
-      : `<textarea class="ws-cell-edit ws-note" data-row-id="${r.id}"
-            rows="3" style="width:100%;min-width:240px;padding:6px;font-size:12px;resize:vertical">${escapeHtml(r.audit_finding_text || "")}</textarea>`;
+            style="width:56px;text-align:center;padding:4px;font-weight:600" />`;
+    const adjustNote = isLocked
+      ? `<div class="ws-cell-readonly">${escapeHtml(r.adjustment_note || "")}</div>`
+      : `<textarea class="ws-cell-edit ws-adjust" data-row-id="${r.id}"
+            rows="3" placeholder="调整得分时填写（默认 AI 评分无需说明）"
+            style="width:100%;min-width:200px;padding:6px;font-size:12px;resize:vertical">${escapeHtml(r.adjustment_note || "")}</textarea>`;
+
+    // 核查要点 / 扣分规则 = 指标定义，只读
+    const audit_points = ind.audit_points || "";
+    const deduct_rules = ind.deduct_rules || "";
 
     return `
       <tr data-row-id="${r.id}">
         <td class="text-center text-muted">${r.serial}</td>
         <td class="text-sm">${cat}</td>
         <td>${escapeHtml(ind.name || "")}</td>
+        <td class="text-xs ws-cell-readonly" style="color:#5f6e89">${escapeHtml(audit_points)}</td>
+        <td class="text-xs ws-cell-readonly" style="color:#5f6e89">${escapeHtml(deduct_rules)}</td>
+        <td>${renderEditableFlags(flags, r.id, isLocked)}</td>
         <td class="text-center">${ind.max_score ?? ""}</td>
         <td class="text-center">${(r.original_score ?? 0).toFixed(2)}</td>
         <td class="text-center">${scoreInput}</td>
-        <td class="text-sm">${textInput}</td>
-        <td>${renderEditableFlags(flags, r.id, isLocked)}</td>
+        <td class="text-sm">${adjustNote}</td>
       </tr>
     `;
   }).join("");
@@ -812,6 +818,8 @@ function bindWorksheetCellEditors(locked) {
         await saveWorksheetRow(rowId, { audited_score: v });
       } else if (el.classList.contains("ws-note")) {
         await saveWorksheetRow(rowId, { audit_finding_text: el.value });
+      } else if (el.classList.contains("ws-adjust")) {
+        await saveWorksheetRow(rowId, { adjustment_note: el.value });
       }
     });
   });
@@ -842,6 +850,7 @@ async function saveWorksheetRow(rowId, payload) {
     if (row) {
       if (payload.audited_score !== undefined) row.audited_score = res.audited_score;
       if (payload.audit_finding_text !== undefined) row.audit_finding_text = res.audit_finding_text;
+      if (payload.adjustment_note !== undefined) row.adjustment_note = res.adjustment_note;
       if (payload.material_flags !== undefined) row.material_flags = res.material_flags;
       // 重算合计
       const tot = State.worksheet.rows.reduce((a, r) => a + (r.audited_score || 0), 0);

@@ -401,10 +401,10 @@
               <div>
                 <div class="section-title" style="margin-bottom:4px">AI 阅卷工作底稿</div>
                 <p class="text-sm text-muted" style="margin:0">
-                  每条指标一行，AI 对照核查要点与扣分规则给出
-                  <strong>核查后得分</strong>和<strong>核查情况说明</strong>，并对
-                  真实性 / 相关性 / 有效性 / 完整性 / 合规性 / 跨单位重复 / 匹配度
-                  共 7 个维度打标。
+                  每条指标一行，AI 对照核查要点和扣分规则给出
+                  <strong>核查后得分</strong>，并对真实性 / 完整性 / 合法合规 / 跨单位重复 / 匹配度
+                  共 5 个维度打标。
+                  <strong>调整得分说明</strong>由审计师编辑（默认空）。
                 </p>
               </div>
               <div class="action-bar" id="ws-action-bar"></div>
@@ -416,13 +416,15 @@
               <thead>
                 <tr>
                   <th style="width:42px">#</th>
-                  <th style="min-width:120px">指标分类</th>
-                  <th style="min-width:160px">指标名称</th>
-                  <th style="width:64px">标准</th>
-                  <th style="width:64px">核查前</th>
-                  <th style="width:64px">核查后</th>
-                  <th>核查情况说明</th>
-                  <th style="min-width:220px">材料判定</th>
+                  <th style="min-width:110px">指标分类</th>
+                  <th style="min-width:140px">指标名称</th>
+                  <th style="min-width:200px">核查要点</th>
+                  <th style="min-width:200px">扣分规则</th>
+                  <th style="min-width:200px">材料判定</th>
+                  <th style="width:60px">标准</th>
+                  <th style="width:60px">核查前</th>
+                  <th style="width:60px">核查后</th>
+                  <th style="min-width:200px">调整得分说明</th>
                 </tr>
               </thead>
               <tbody id="ws-tbody"></tbody>

@@ -70,15 +70,20 @@ def test_worksheet_xlsx_export_shape(client, auth_headers):
     ws = wb.worksheets[0]
     assert ws.title == "内控评价核查得分表"
     assert ws.cell(2, 1).value == "序号"
-    assert ws.cell(2, 6).value == "核查后得分"
-    assert ws.cell(2, 10).value == "佐证材料核查结果"
+    # V3 列顺序：核查后得分在第 9 列
+    assert ws.cell(2, 9).value == "核查后得分"
+    # 佐证材料核查结果在第 6 列
+    assert ws.cell(2, 6).value == "佐证材料核查结果"
+    # 调整得分说明在第 10 列
+    assert ws.cell(2, 10).value == "调整得分说明"
 
     total_row = next(
         (r for r in range(3, ws.max_row + 1) if ws.cell(r, 1).value == "合计"),
         None,
     )
     assert total_row is not None
-    assert ws.cell(total_row, 4).value == 100
+    # 合计行标准分值在第 7 列（新列顺序）
+    assert ws.cell(total_row, 7).value == 100
 
 
 def test_cross_task_duplicate_flag(client, auth_headers):
