@@ -1,0 +1,18 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>
+<script>
+(async () => {
+  const r = await fetch("/api/auth/login", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({username: "admin", password: "admin123"}),
+  });
+  const data = await r.json();
+  localStorage.setItem("audit.token", data.token);
+  // 跳到 indicators 并自动打开第一条详情
+  location.href = "/#/indicators";
+  setTimeout(() => {
+    const btn = document.querySelector('[onclick^="viewIndicator"]');
+    if (btn) btn.click();
+  }, 1500);
+})();
+</script>
+</body></html>

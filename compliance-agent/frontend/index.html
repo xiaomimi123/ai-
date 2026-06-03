@@ -441,10 +441,13 @@
             <h1 class="page-title">评价指标库</h1>
             <p class="page-sub">编报指南附件 1/2 中的评价指标，AI 判断的基准。</p>
           </div>
-          <label class="btn btn-secondary">
-            ⇪ 批量导入（JSON / PDF / Word / Excel）
-            <input type="file" id="import-indicators" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
-          </label>
+          <div class="action-bar">
+            <button class="btn btn-ghost" id="export-indicators">⬇ 导出当前列表</button>
+            <label class="btn btn-secondary">
+              ⇪ 批量导入（JSON / PDF / Word / Excel）
+              <input type="file" id="import-indicators" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
+            </label>
+          </div>
         </div>
       </header>
       <div class="page-body">
@@ -483,10 +486,13 @@
             <h1 class="page-title">问题清单库</h1>
             <p class="page-sub">客户提供的真实性 + 相关性核查清单，AI 的「考题」。</p>
           </div>
-          <label class="btn btn-secondary">
-            ⇪ 批量导入（JSON / PDF / Word / Excel）
-            <input type="file" id="import-items" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
-          </label>
+          <div class="action-bar">
+            <button class="btn btn-ghost" id="export-check-items">⬇ 导出当前列表</button>
+            <label class="btn btn-secondary">
+              ⇪ 批量导入（JSON / PDF / Word / Excel）
+              <input type="file" id="import-items" accept=".json,.pdf,.docx,.xlsx,.txt,.md" hidden />
+            </label>
+          </div>
         </div>
       </header>
       <div class="page-body">
@@ -982,6 +988,21 @@
     <div class="action-bar mt-3">
       <button id="ipm-confirm" class="btn btn-primary">确认导入</button>
       <button class="btn btn-ghost" data-close-modal="#import-preview-modal">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 知识库 · 通用详情模态（指标/问题清单共用）-->
+<div id="kb-detail-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:760px;max-height:88vh;overflow-y:auto">
+    <div class="flex items-center gap-3 mb-3">
+      <h2 id="kbd-title" class="modal-title" style="margin-bottom:0">条目详情</h2>
+      <span id="kbd-code" class="code-id"></span>
+    </div>
+    <dl id="kbd-grid" class="detail-meta-grid"></dl>
+    <div class="action-bar mt-4">
+      <button class="btn btn-secondary" id="kbd-download">⬇ 下载该条 JSON</button>
+      <button class="btn btn-ghost" data-close-modal="#kb-detail-modal">关闭</button>
     </div>
   </div>
 </div>

@@ -155,6 +155,20 @@ def finalize_task(task_id: int,
     return audit_service.finalize_task(db, task_id, user)
 
 
+@tasks_router.delete("/{task_id}")
+def delete_task(task_id: int,
+                db: Session = Depends(get_db),
+                user: User = Depends(require_auditor)):
+    """删除任务（级联清理材料 + finding + 物理文件）。仅审查员及以上可删。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权删除此任务")
+    audit_service.delete_task(db, task_id, user)
+    return {"status": "ok"}
+
+
 @tasks_router.get("/{task_id}/report")
 def download_task_report(task_id: int,
                          db: Session = Depends(get_db),

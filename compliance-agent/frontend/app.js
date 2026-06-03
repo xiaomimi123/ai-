@@ -280,14 +280,17 @@ async function loadTasks() {
     tbody.innerHTML = tasks.map(t => {
       const unit = units.find(u => u.id === t.unit_id);
       return `
-        <tr onclick="navigate('#/tasks/${t.id}')" class="is-row-button">
-          <td><span class="code-id">#${pad(t.id)}</span></td>
-          <td style="font-weight:500">${esc(unit ? unit.name : "—")}</td>
-          <td>${esc(t.name)}</td>
-          <td class="table-mono">${t.eval_year}</td>
-          <td>${statusBadge(t.status)}</td>
-          <td class="text-sm text-muted">${esc(t.summary || "—")}</td>
-          <td class="row-arrow text-right">→</td>
+        <tr class="is-row-button">
+          <td onclick="navigate('#/tasks/${t.id}')"><span class="code-id">#${pad(t.id)}</span></td>
+          <td onclick="navigate('#/tasks/${t.id}')" style="font-weight:500">${esc(unit ? unit.name : "—")}</td>
+          <td onclick="navigate('#/tasks/${t.id}')">${esc(t.name)}</td>
+          <td onclick="navigate('#/tasks/${t.id}')" class="table-mono">${t.eval_year}</td>
+          <td onclick="navigate('#/tasks/${t.id}')">${statusBadge(t.status)}</td>
+          <td onclick="navigate('#/tasks/${t.id}')" class="text-sm text-muted">${esc(t.summary || "—")}</td>
+          <td class="text-right" style="white-space:nowrap">
+            <button class="btn btn-ghost btn-sm" onclick="navigate('#/tasks/${t.id}')" title="查看">→</button>
+            <button class="btn btn-danger-ghost btn-sm" onclick="deleteTaskFromList(${t.id}, event)" title="删除任务">✕</button>
+          </td>
         </tr>`;
     }).join("");
   } catch (e) { console.error(e); }
@@ -465,6 +468,7 @@ function renderTaskActions(task) {
   if (["ai_done", "reviewing", "finalized", "archived"].includes(task.status)) {
     acts.push(`<button class="btn btn-secondary" onclick="downloadTaskReport()">导出 Word 报告</button>`);
   }
+  acts.push(`<button class="btn btn-danger-ghost" onclick="deleteCurrentTask()" title="删除任务">✕ 删除任务</button>`);
   box.innerHTML = acts.join("");
 }
 
@@ -507,6 +511,26 @@ window.finalizeTask = async function() {
     await api(`/tasks/${State.taskId}/finalize`, { method: "POST" });
     toast("✓ 已定稿", "success");
     loadTaskWorkspace(State.taskId);
+  } catch (e) { toast(e.message, "error"); }
+};
+
+window.deleteTaskFromList = async function(taskId, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  if (!confirm(`确定删除任务 #${pad(taskId)}？\n\n会一并清理：\n· 任务下的所有材料文件\n· 所有 AI 核查发现（Finding）\n\n此操作不可恢复。`)) return;
+  try {
+    await api(`/tasks/${taskId}`, { method: "DELETE" });
+    toast(`✓ 任务 #${pad(taskId)} 已删除`, "success");
+    loadTasks();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+window.deleteCurrentTask = async function() {
+  if (!State.taskId) return;
+  if (!confirm(`确定删除当前任务？\n\n会一并清理：\n· 任务下的所有材料文件\n· 所有 AI 核查发现\n\n此操作不可恢复。`)) return;
+  try {
+    await api(`/tasks/${State.taskId}`, { method: "DELETE" });
+    toast(`✓ 任务已删除`, "success");
+    navigate("#/tasks");
   } catch (e) { toast(e.message, "error"); }
 };
 
@@ -1485,14 +1509,61 @@ function renderIndicators() {
       <td style="font-weight:500">${esc(i.name)}</td>
       <td class="table-mono">${i.max_score}</td>
       <td class="text-sm text-muted">${esc(mats.join("、")) || '—'}</td>
-      <td class="text-right">
+      <td class="text-right" style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="viewIndicator(${i.id})" title="查看详情">👁</button>
         ${isAdmin
-          ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteIndicator(${i.id}, '${esc(i.indicator_code)}')">✕</button>`
+          ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteIndicator(${i.id}, '${esc(i.indicator_code)}')" title="删除">✕</button>`
           : ''}
       </td>
     </tr>`;
   }).join("");
 }
+
+// 查看评价指标详情
+window.viewIndicator = function(id) {
+  const ind = _indCache.find(i => i.id === id);
+  if (!ind) return;
+  let mats = []; try { mats = JSON.parse(ind.required_materials || "[]"); } catch {}
+
+  const rows = [
+    ["指标编号", `<span class="code-id">${esc(ind.indicator_code)}</span>`],
+    ["层级", `<span class="badge badge-gray">${esc(ind.level)}</span>`],
+    ["业务分类", esc(ind.category) || "—"],
+    ["子类", esc(ind.subcategory) || "—"],
+    ["满分", `<span class="table-mono">${ind.max_score} 分</span>`],
+    ["指标描述", esc(ind.description) || "—"],
+    ["扣分细则", `<div class="detail-quote" style="margin:0">${esc(ind.deduct_rules) || "—"}</div>`],
+    ["常见扣分情形", `<div class="detail-quote" style="margin:0">${esc(ind.common_deductions) || "—"}</div>`],
+    ["必需材料", mats.length ? mats.map(m => `<span class="tag">${esc(m)}</span>`).join(" ") : "—"],
+    ["入库时间", fmtTime(ind.created_at)],
+  ];
+
+  document.getElementById("kbd-title").textContent = ind.name;
+  document.getElementById("kbd-code").textContent = ind.indicator_code;
+  document.getElementById("kbd-grid").innerHTML = rows.map(([k, v]) =>
+    `<dt>${esc(k)}</dt><dd>${v}</dd>`
+  ).join("");
+
+  // 单条下载
+  const dl = document.getElementById("kbd-download");
+  dl.onclick = () => downloadJsonBlob(
+    `indicator_${ind.indicator_code}.json`,
+    [{
+      indicator_code: ind.indicator_code,
+      level: ind.level,
+      category: ind.category,
+      subcategory: ind.subcategory,
+      name: ind.name,
+      description: ind.description,
+      max_score: ind.max_score,
+      deduct_rules: ind.deduct_rules,
+      common_deductions: ind.common_deductions,
+      required_materials: mats,
+    }]
+  );
+
+  document.getElementById("kb-detail-modal").classList.remove("hidden");
+};
 
 window.deleteIndicator = async function(id, code) {
   if (!confirm(`确定删除评价指标「${code}」？`)) return;
@@ -1559,13 +1630,146 @@ function renderCheckItems() {
     <td class="text-sm">${esc(it.description)}</td>
     <td><span class="tag">${esc(it.check_method)}</span></td>
     <td><span class="chip-risk chip-risk-${it.risk_level}">${it.risk_level}</span></td>
-    <td class="text-right">
+    <td class="text-right" style="white-space:nowrap">
+      <button class="btn btn-ghost btn-sm" onclick="viewCheckItem(${it.id})" title="查看详情">👁</button>
       ${isAdmin
-        ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteCheckItem(${it.id}, '${esc(it.item_code)}')">✕</button>`
+        ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteCheckItem(${it.id}, '${esc(it.item_code)}')" title="删除">✕</button>`
         : ''}
     </td>
   </tr>`).join("");
 }
+
+// 查看问题清单详情
+window.viewCheckItem = function(id) {
+  const it = _ciCache.find(x => x.id === id);
+  if (!it) return;
+
+  let apps = []; try { apps = JSON.parse(it.applicable_indicators || "[]"); } catch {}
+  let pats = []; try { pats = JSON.parse(it.common_patterns || "[]"); } catch {}
+  let kws = []; try { kws = JSON.parse(it.keywords || "[]"); } catch {}
+
+  const rows = [
+    ["条目编号", `<span class="code-id">${esc(it.item_code)}</span>`],
+    ["检查维度", `<span class="badge badge-blue">${esc(it.dimension)}</span>`],
+    ["子类", esc(it.subcategory) || "—"],
+    ["条目描述", `<div class="detail-quote" style="margin:0">${esc(it.description)}</div>`],
+    ["检查方法", `<span class="tag">${esc(it.check_method)}</span> ${it.check_method === 'rule' ? '（刚性规则）' : '（LLM 语义判断）'}`],
+    ["风险等级", `<span class="chip-risk chip-risk-${it.risk_level}">${it.risk_level}</span>`],
+    ["适用指标", apps.length ? apps.map(c => `<span class="code-id">${esc(c)}</span>`).join("、") : "全部指标"],
+    ["常见问题", pats.length ? pats.map(p => `<div class="text-sm">· ${esc(p)}</div>`).join("") : "—"],
+    ["关键词", kws.length ? kws.map(k => `<span class="tag">${esc(k)}</span>`).join(" ") : "—"],
+    ["启用状态", it.is_active ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-gray">停用</span>'],
+  ];
+
+  document.getElementById("kbd-title").textContent = it.description;
+  document.getElementById("kbd-code").textContent = it.item_code;
+  document.getElementById("kbd-grid").innerHTML = rows.map(([k, v]) =>
+    `<dt>${esc(k)}</dt><dd>${v}</dd>`
+  ).join("");
+
+  document.getElementById("kbd-download").onclick = () => downloadJsonBlob(
+    `check_item_${it.item_code}.json`,
+    [{
+      item_code: it.item_code,
+      dimension: it.dimension,
+      subcategory: it.subcategory,
+      description: it.description,
+      applicable_indicators: apps,
+      risk_level: it.risk_level,
+      common_patterns: pats,
+      check_method: it.check_method,
+      keywords: kws,
+    }]
+  );
+
+  document.getElementById("kb-detail-modal").classList.remove("hidden");
+};
+
+// 通用：导出 JSON 为浏览器下载
+function downloadJsonBlob(filename, data) {
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// 批量导出当前筛选列表
+document.getElementById("export-indicators").addEventListener("click", () => {
+  // 用当前筛选后的列表
+  const search = (document.getElementById("ind-search").value || "").trim().toLowerCase();
+  const level = document.getElementById("ind-filter-level").value;
+  const category = document.getElementById("ind-filter-category").value;
+  let list = _indCache;
+  if (level) list = list.filter(i => i.level === level);
+  if (category) list = list.filter(i => i.category === category);
+  if (search) {
+    list = list.filter(i =>
+      (i.indicator_code || "").toLowerCase().includes(search) ||
+      (i.name || "").toLowerCase().includes(search) ||
+      (i.category || "").toLowerCase().includes(search)
+    );
+  }
+  if (!list.length) { toast("当前筛选下没有可导出条目", "error"); return; }
+  const data = list.map(i => {
+    let mats = []; try { mats = JSON.parse(i.required_materials || "[]"); } catch {}
+    return {
+      indicator_code: i.indicator_code,
+      level: i.level,
+      category: i.category,
+      subcategory: i.subcategory,
+      name: i.name,
+      description: i.description,
+      max_score: i.max_score,
+      deduct_rules: i.deduct_rules,
+      common_deductions: i.common_deductions,
+      required_materials: mats,
+    };
+  });
+  const ts = new Date().toISOString().slice(0, 10);
+  downloadJsonBlob(`indicators_${ts}_${data.length}items.json`, data);
+  toast(`✓ 已导出 ${data.length} 条评价指标`, "success");
+});
+
+document.getElementById("export-check-items").addEventListener("click", () => {
+  const search = (document.getElementById("ci-search").value || "").trim().toLowerCase();
+  const dim = document.getElementById("ci-filter-dim").value;
+  const method = document.getElementById("ci-filter-method").value;
+  let list = _ciCache;
+  if (dim) list = list.filter(x => x.dimension === dim);
+  if (method) list = list.filter(x => x.check_method === method);
+  if (search) {
+    list = list.filter(x =>
+      (x.item_code || "").toLowerCase().includes(search) ||
+      (x.description || "").toLowerCase().includes(search)
+    );
+  }
+  if (!list.length) { toast("当前筛选下没有可导出条目", "error"); return; }
+  const data = list.map(it => {
+    let apps = []; try { apps = JSON.parse(it.applicable_indicators || "[]"); } catch {}
+    let pats = []; try { pats = JSON.parse(it.common_patterns || "[]"); } catch {}
+    let kws = []; try { kws = JSON.parse(it.keywords || "[]"); } catch {}
+    return {
+      item_code: it.item_code,
+      dimension: it.dimension,
+      subcategory: it.subcategory,
+      description: it.description,
+      applicable_indicators: apps,
+      risk_level: it.risk_level,
+      common_patterns: pats,
+      check_method: it.check_method,
+      keywords: kws,
+    };
+  });
+  const ts = new Date().toISOString().slice(0, 10);
+  downloadJsonBlob(`check_items_${ts}_${data.length}items.json`, data);
+  toast(`✓ 已导出 ${data.length} 条问题清单`, "success");
+});
 
 window.deleteCheckItem = async function(id, code) {
   if (!confirm(`确定删除问题清单「${code}」？（软删，可在管理端恢复）`)) return;

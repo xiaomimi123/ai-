@@ -188,6 +188,33 @@ def resolve_rectification(db: Session, finding_id: int, confirm_note: str,
 # ============================================================
 # 任务状态推进
 # ============================================================
+def delete_task(db: Session, task_id: int, user: User) -> None:
+    """级联删除任务：清理 Material 物理文件 + 删 DB 行 + 删 Finding。
+
+    AuditTask 的 relationships (materials, findings) 已配 cascade="all, delete-orphan"，
+    DB 层会自动级联。但 Material 文件需手工清理。
+    """
+    import os
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+
+    # 清理物理文件
+    for m in list(task.materials):
+        if m.storage_path and os.path.exists(m.storage_path):
+            try:
+                os.remove(m.storage_path)
+            except OSError as exc:
+                print(f"[task.delete] 清理文件失败 {m.storage_path}: {exc}")
+
+    task_name = task.name
+    db.delete(task)  # ← 级联删 materials / findings
+    log_action(db, user, "task.delete",
+               target_type="task", target_id=task_id,
+               detail=f"删除任务「{task_name}」")
+    db.commit()
+
+
 def finalize_task(db: Session, task_id: int, user: User) -> AuditTask:
     """审查员完成复核后，将任务定稿为 finalized。"""
     task = db.get(AuditTask, task_id)
