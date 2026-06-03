@@ -870,14 +870,36 @@ function renderMaterials() {
     State.indicators.map(i =>
       `<option value="${i.id}">[${esc(i.indicator_code)}] ${esc(i.name)}</option>`).join("");
 
+  // 顶部条幅：绑定进度
+  const bound = d.materials.filter(m => m.indicator_id).length;
+  const total = d.materials.length;
+  const banner = document.getElementById("tw-bind-banner");
+  if (banner) {
+    if (total === 0) {
+      banner.innerHTML = "";
+    } else if (bound === total) {
+      banner.innerHTML = `<div class="callout callout-success" style="margin:8px 0">
+        ✓ 全部 ${total} 份材料已绑定指标，可触发 AI 核查。</div>`;
+    } else {
+      banner.innerHTML = `<div class="callout callout-warn" style="margin:8px 0">
+        <strong>${bound} / ${total}</strong> 已绑定指标，还有
+        <strong>${total - bound}</strong> 份未绑定。可点
+        <strong>「AI 自动绑定」</strong>批量识别，剩余的请用每行下拉手动指定。
+      </div>`;
+    }
+  }
+
   const tbody = document.getElementById("tw-materials-tbody");
   if (!d.materials.length) {
     tbody.innerHTML = `<tr><td colspan="4" class="empty-state">
       <div class="empty-state-glyph">⊕</div>尚未上传材料</td></tr>`;
     return;
   }
+  // 下拉选项缓存（55 项）
+  const indOptionsHtml = State.indicators.map(i =>
+    `<option value="${i.id}">[${esc(i.indicator_code)}] ${esc(i.name)}</option>`).join("");
+
   tbody.innerHTML = d.materials.map(m => {
-    const ind = State.indicators.find(i => i.id === m.indicator_id);
     let ke = {};
     try { ke = JSON.parse(m.key_elements || "{}"); } catch {}
     const badges = [
@@ -887,14 +909,55 @@ function renderMaterials() {
       ke.is_draft ? `<span class="badge badge-red">草稿</span>` : '',
       ke.document_number ? `<span class="tag">${esc(ke.document_number)}</span>` : '',
     ].filter(Boolean).join(" ");
+    const selectClass = m.indicator_id ? "form-select tw-bind-select" : "form-select tw-bind-select tw-bind-unset";
     return `<tr>
       <td><span class="code-id">#${pad(m.id)}</span></td>
       <td style="font-weight:500">${esc(m.file_name)}</td>
-      <td>${ind ? `<span class="code-id">${esc(ind.indicator_code)}</span> ${esc(ind.name)}` : '<span class="text-muted">未绑定</span>'}</td>
+      <td>
+        <select class="${selectClass}" data-material-id="${m.id}" style="min-width:240px">
+          <option value="">— 未绑定 —</option>
+          ${indOptionsHtml.replace(new RegExp(`value="${m.indicator_id}"`), `value="${m.indicator_id}" selected`)}
+        </select>
+      </td>
       <td><div class="flex gap-1" style="flex-wrap:wrap">${badges}</div></td>
     </tr>`;
   }).join("");
+
+  // 绑定下拉变更 → 调 PATCH
+  tbody.querySelectorAll("select.tw-bind-select").forEach(sel => {
+    sel.addEventListener("change", async ev => {
+      const mid = ev.target.dataset.materialId;
+      const val = ev.target.value;
+      try {
+        await api(`/tasks/${State.taskId}/materials/${mid}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ indicator_id: val ? parseInt(val) : null }),
+        });
+        await loadTaskWorkspace(State.taskId);
+      } catch (e) { toast("绑定失败：" + e.message, "error"); }
+    });
+  });
+
+  // 触发核查按钮防呆
+  const runBtn = document.getElementById("tw-run-btn");
+  if (runBtn) {
+    const allBound = total > 0 && bound === total;
+    runBtn.disabled = !allBound;
+    runBtn.title = allBound ? "" : `仍有 ${total - bound} 份材料未绑定指标`;
+    runBtn.style.opacity = allBound ? "" : "0.5";
+    runBtn.style.cursor = allBound ? "" : "not-allowed";
+  }
 }
+
+// AI 自动绑定（批量）
+window.runAutoBind = async function() {
+  if (!State.taskId) return;
+  try {
+    const res = await api(`/tasks/${State.taskId}/materials/auto-bind`, { method: "POST" });
+    toast(`✓ 自动绑定 ${res.bound_now}/${res.checked} 份，剩 ${res.still_unbound} 份请手动绑定`, "success");
+    await loadTaskWorkspace(State.taskId);
+  } catch (e) { toast(e.message, "error"); }
+};
 
 document.getElementById("material-upload-form").addEventListener("submit", async ev => {
   ev.preventDefault();

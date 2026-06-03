@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -22,7 +23,7 @@ from app.api.schemas import (
 )
 from app.core.auth import get_current_user, log_action, require_auditor
 from app.core.permissions import is_admin, is_auditor_or_above, is_unit
-from app.models import AuditTask, AuditUnit, Finding, Material, User, get_db
+from app.models import AuditTask, AuditUnit, Finding, Indicator, Material, User, get_db
 from app.parsers.dispatcher import UnsupportedFormatError
 from app.services import audit_service
 from app.services.report_service import build_report_docx
@@ -148,6 +149,38 @@ async def upload_material(
         )
     except UnsupportedFormatError as exc:
         raise HTTPException(400, str(exc))
+    return material
+
+
+class MaterialBindRequest(BaseModel):
+    indicator_id: Optional[int] = None  # null=解绑
+
+
+@tasks_router.patch("/{task_id}/materials/{material_id}", response_model=MaterialOut)
+def bind_material_indicator(task_id: int, material_id: int,
+                            req: MaterialBindRequest,
+                            db: Session = Depends(get_db),
+                            user: User = Depends(require_auditor)):
+    """改/解绑某份材料的指标。"""
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权操作此任务")
+    material = db.get(Material, material_id)
+    if not material or material.task_id != task_id:
+        raise HTTPException(404, "材料不存在或不属于本任务")
+    if req.indicator_id is not None:
+        ind = db.get(Indicator, req.indicator_id)
+        if not ind:
+            raise HTTPException(400, f"指标 {req.indicator_id} 不存在")
+    old_iid = material.indicator_id
+    material.indicator_id = req.indicator_id
+    log_action(db, user, "material.bind",
+               target_type="material", target_id=material.id,
+               detail=f"任务 #{task_id} 材料 {material.file_name} 绑定 "
+                      f"{old_iid} → {req.indicator_id}")
+    db.commit(); db.refresh(material)
     return material
 
 

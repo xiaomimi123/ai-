@@ -112,6 +112,40 @@ def test_batch_auto_bind_existing(client):
 # ============================================================
 # orchestrator：共享池场景下应只挑相关材料
 # ============================================================
+def test_patch_material_bind(client):
+    """PATCH /tasks/{id}/materials/{mid} 改绑材料指标。"""
+    r = client.post("/api/units", json={"name": "PATCH-A", "code": ""})
+    unit_id = r.json()["id"]
+    task_id = client.post("/api/tasks", json={
+        "unit_id": unit_id, "name": "patch", "eval_year": 2025, "scope": "all",
+    }).json()["id"]
+
+    # 上传一份无关键词的材料 → 不会自动绑定
+    m = client.post(f"/api/tasks/{task_id}/materials",
+                    files={"file": ("杂项.txt", b"x", "text/plain")}).json()
+    assert m["indicator_id"] in (None,)
+
+    inds = client.get("/api/indicators").json()
+    target = next(i for i in inds if i["indicator_code"] == "I-13")
+
+    # 改绑到 I-13
+    r = client.patch(f"/api/tasks/{task_id}/materials/{m['id']}",
+                     json={"indicator_id": target["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["indicator_id"] == target["id"]
+
+    # 解绑
+    r = client.patch(f"/api/tasks/{task_id}/materials/{m['id']}",
+                     json={"indicator_id": None})
+    assert r.status_code == 200
+    assert r.json()["indicator_id"] is None
+
+    # 改到不存在的指标 → 400
+    r = client.patch(f"/api/tasks/{task_id}/materials/{m['id']}",
+                     json={"indicator_id": 999999})
+    assert r.status_code == 400
+
+
 def test_orchestrator_filters_unbound_by_subcategory():
     from app.models import SessionLocal, Indicator, Material
     from app.engine.orchestrator import _materials_for_indicator

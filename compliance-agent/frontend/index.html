@@ -354,13 +354,18 @@
             </div>
           </div>
 
+          <div id="tw-bind-banner"></div>
+
           <div class="card" style="padding:0">
             <div class="flex justify-between items-center" style="padding:16px 24px;border-bottom:1px solid var(--divider)">
               <div class="section-title" style="margin-bottom:0">已上传材料</div>
-              <button id="tw-run-btn" class="btn btn-primary"><span data-icon="play"></span><span>触发 AI 核查</span></button>
+              <div class="action-bar">
+                <button class="btn btn-secondary btn-sm" onclick="runAutoBind()"><span data-icon="refresh"></span><span>AI 自动绑定指标</span></button>
+                <button id="tw-run-btn" class="btn btn-primary"><span data-icon="play"></span><span>触发 AI 核查</span></button>
+              </div>
             </div>
             <table class="table">
-              <thead><tr><th>编号</th><th>文件</th><th>绑定指标</th><th>关键要素</th></tr></thead>
+              <thead><tr><th style="width:60px">编号</th><th>文件</th><th style="width:280px">绑定指标</th><th>关键要素</th></tr></thead>
               <tbody id="tw-materials-tbody"></tbody>
             </table>
           </div>

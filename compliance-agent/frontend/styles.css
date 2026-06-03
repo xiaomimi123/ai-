@@ -1146,6 +1146,14 @@ button { font-family: inherit; }
 .text-sm { font-size: 12px; }
 .text-xs { font-size: 11px; }
 .text-muted { color: var(--text-secondary); }
+
+/* 材料 → 指标 绑定选择器：未绑定时高亮 */
+.tw-bind-select { font-size: 12px; padding: 4px 6px; }
+.tw-bind-unset {
+  border-color: #d97706 !important;
+  background: #fffbeb !important;
+  color: #92400e;
+}
 .text-faint { color: var(--text-tertiary); }
 .hidden { display: none !important; }
 .text-right { text-align: right; }
