@@ -300,18 +300,61 @@ document.getElementById("open-create-task").addEventListener("click", openCreate
 // ============================================================
 async function openCreateTaskModal() {
   try {
-    const units = await api("/units");
+    const [units, indicators] = await Promise.all([
+      api("/units"),
+      api("/indicators"),
+    ]);
     State.units = units;
+    State.indicators = indicators;
     const sel = document.getElementById("ct-unit-select");
     sel.innerHTML = `<option value="">— 选择单位 —</option>` +
       units.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join("");
+
+    // 指标多选列表
+    const picker = document.getElementById("ct-indicator-list");
+    const countEl = document.getElementById("ct-indicator-count");
+    if (!indicators.length) {
+      picker.innerHTML = `<div class="text-muted">评价指标库为空，请先在「评价指标」页导入指标。</div>`;
+      countEl.textContent = "";
+    } else {
+      // 按分类分组
+      const groups = {};
+      indicators.forEach(i => {
+        const key = i.category || "其它";
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(i);
+      });
+      picker.innerHTML = Object.entries(groups).map(([cat, items]) => `
+        <div style="margin-bottom:8px">
+          <div class="text-xs text-faint" style="margin-bottom:4px;font-weight:600">${esc(cat)} (${items.length})</div>
+          ${items.map(i => `
+            <label style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer">
+              <input type="checkbox" name="ct-indicator" value="${i.id}" />
+              <span class="code-id" style="min-width:60px">${esc(i.indicator_code)}</span>
+              <span style="font-size:13px">${esc(i.name)}</span>
+              <span class="text-xs text-faint">满分 ${i.max_score}</span>
+            </label>`).join("")}
+        </div>`).join("");
+      countEl.textContent = `共 ${indicators.length} 个指标可选`;
+    }
+
     document.getElementById("create-task-modal").classList.remove("hidden");
     document.getElementById("ct-new-unit-form").classList.add("hidden");
     document.getElementById("ct-error").classList.add("hidden");
     document.getElementById("task-create-form").reset();
     document.getElementById("ct-unit-select").value = "";
+    document.getElementById("ct-indicator-picker").classList.add("hidden");
   } catch (e) { toast(e.message, "error"); }
 }
+
+// scope radio 切换显隐指标多选区
+document.querySelectorAll('input[name="scope"]').forEach(r => {
+  r.addEventListener("change", ev => {
+    document.getElementById("ct-indicator-picker").classList.toggle(
+      "hidden", ev.target.value !== "selected"
+    );
+  });
+});
 
 document.getElementById("ct-new-unit").addEventListener("click", () => {
   document.getElementById("ct-new-unit-form").classList.toggle("hidden");
@@ -353,6 +396,20 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
   const fd = new FormData(ev.target);
   const errBox = document.getElementById("ct-error");
   errBox.classList.add("hidden");
+
+  const scope = fd.get("scope") || "all";
+  let selectedIds = [];
+  if (scope === "selected") {
+    selectedIds = Array.from(
+      document.querySelectorAll('input[name="ct-indicator"]:checked')
+    ).map(x => parseInt(x.value));
+    if (selectedIds.length === 0) {
+      errBox.textContent = "请至少勾选一个评价指标，或选择「全部指标」";
+      errBox.classList.remove("hidden");
+      return;
+    }
+  }
+
   try {
     const task = await api("/tasks", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -360,10 +417,13 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
         unit_id: parseInt(fd.get("unit_id")),
         name: fd.get("name"),
         eval_year: parseInt(fd.get("eval_year")),
+        scope,
+        selected_indicator_ids: selectedIds,
       }),
     });
     document.getElementById("create-task-modal").classList.add("hidden");
-    toast(`✓ 任务 #${pad(task.id)} 已创建`, "success");
+    const scopeLbl = scope === "all" ? "全部指标" : `${selectedIds.length} 个指标`;
+    toast(`✓ 任务 #${pad(task.id)} 已创建（${scopeLbl}）`, "success");
     navigate(`#/tasks/${task.id}`);
   } catch (e) {
     errBox.textContent = e.message;
@@ -498,7 +558,7 @@ function renderOverview() {
 function renderMaterials() {
   const d = State.taskDetail;
   const indSel = document.getElementById("md-indicator");
-  indSel.innerHTML = `<option value="">— 选择指标 —</option>` +
+  indSel.innerHTML = `<option value="">— 不绑定（归入共享池）—</option>` +
     State.indicators.map(i =>
       `<option value="${i.id}">[${esc(i.indicator_code)}] ${esc(i.name)}</option>`).join("");
 
@@ -533,13 +593,13 @@ document.getElementById("material-upload-form").addEventListener("submit", async
   const indId = document.getElementById("md-indicator").value;
   const fileInput = document.getElementById("md-file");
   const status = document.getElementById("md-status");
-  if (!indId || !fileInput.files.length) {
-    status.innerHTML = `<div class="callout callout-warn">请选择指标并上传文件</div>`;
+  if (!fileInput.files.length) {
+    status.innerHTML = `<div class="callout callout-warn">请选择文件</div>`;
     return;
   }
   const fd = new FormData();
   fd.append("file", fileInput.files[0]);
-  fd.append("indicator_id", indId);
+  if (indId) fd.append("indicator_id", indId);
   status.innerHTML = `<div class="callout callout-info">正在解析材料…</div>`;
   try {
     const tok = getToken();
@@ -553,6 +613,116 @@ document.getElementById("material-upload-form").addEventListener("submit", async
   } catch (e) {
     status.innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
   }
+});
+
+// ============================================================
+// 材料 · 文件夹批量上传
+// ============================================================
+const MD_FOLDER = { files: [], cancelled: false };
+const MD_FOLDER_CONCURRENCY = 3;
+const MD_FOLDER_MAX = 200;
+const MD_FOLDER_EXTS = [".pdf", ".docx", ".xlsx", ".txt", ".md"];
+
+document.getElementById("md-folder-btn").addEventListener("click", () => {
+  document.getElementById("md-folder-picker").click();
+});
+
+document.getElementById("md-folder-picker").addEventListener("change", async ev => {
+  const all = Array.from(ev.target.files || []);
+  ev.target.value = "";
+  if (!all.length) return;
+  const valid = all.filter(f => {
+    const n = (f.name || "").toLowerCase();
+    return MD_FOLDER_EXTS.some(ext => n.endsWith(ext));
+  });
+  if (!valid.length) {
+    toast("文件夹内无支持的文件", "error"); return;
+  }
+  if (valid.length > MD_FOLDER_MAX) {
+    toast(`文件数 ${valid.length} 超过 ${MD_FOLDER_MAX} 上限`, "error"); return;
+  }
+  MD_FOLDER.files = valid;
+  MD_FOLDER.cancelled = false;
+  await runMaterialFolderUpload();
+});
+
+async function runMaterialFolderUpload() {
+  const files = MD_FOLDER.files;
+  const tbody = document.getElementById("mfp-tbody");
+  document.getElementById("mfp-cancel").classList.remove("hidden");
+  document.getElementById("mfp-cancel").disabled = false;
+  document.getElementById("mfp-close").classList.add("hidden");
+  document.getElementById("mfp-summary").textContent =
+    `共 ${files.length} 份文件 · 归入任务共享池（核查时对所有指标交叉匹配）`;
+  document.getElementById("mfp-bar").style.width = "0%";
+
+  tbody.innerHTML = files.map((f, idx) => `
+    <tr id="mfp-row-${idx}">
+      <td><span id="mfp-icon-${idx}" class="text-muted">○</span></td>
+      <td style="word-break:break-all">${esc(f.webkitRelativePath || f.name)}</td>
+      <td class="text-faint">${(f.size / 1024).toFixed(1)} KB</td>
+      <td id="mfp-msg-${idx}" class="text-sm text-muted">待上传</td>
+    </tr>`).join("");
+
+  document.getElementById("md-folder-progress-modal").classList.remove("hidden");
+
+  let cursor = 0, done = 0, ok = 0, fail = 0;
+  const updateBar = () => {
+    document.getElementById("mfp-bar").style.width = `${(done / files.length) * 100}%`;
+    document.getElementById("mfp-summary").textContent =
+      `进度 ${done}/${files.length} · 成功 ${ok} · 失败 ${fail}`;
+  };
+
+  async function worker() {
+    while (true) {
+      if (MD_FOLDER.cancelled) break;
+      const idx = cursor++;
+      if (idx >= files.length) break;
+      const file = files[idx];
+      const icon = document.getElementById(`mfp-icon-${idx}`);
+      const msg = document.getElementById(`mfp-msg-${idx}`);
+      icon.innerHTML = '<span style="color:var(--orange)">⋯</span>';
+      msg.textContent = "上传中…";
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        // 不绑定 indicator_id → 归入共享池
+        const tok = getToken();
+        const r = await fetch(`${API}/tasks/${State.taskId}/materials`, {
+          method: "POST", headers: { "Authorization": "Bearer " + tok }, body: fd,
+        });
+        if (!r.ok) throw new Error(await r.text());
+        icon.innerHTML = '<span style="color:var(--green)">✓</span>';
+        msg.textContent = "✓ 已上传";
+        ok++;
+      } catch (e) {
+        icon.innerHTML = '<span style="color:var(--red)">✗</span>';
+        msg.textContent = "✗ " + (e.message || "上传失败");
+        msg.style.color = "var(--red)";
+        fail++;
+      }
+      done++;
+      updateBar();
+    }
+  }
+
+  const workers = Array.from({ length: MD_FOLDER_CONCURRENCY }, () => worker());
+  await Promise.all(workers);
+
+  document.getElementById("mfp-cancel").classList.add("hidden");
+  document.getElementById("mfp-close").classList.remove("hidden");
+  if (MD_FOLDER.cancelled) {
+    document.getElementById("mfp-summary").textContent =
+      `已取消 · 完成 ${done}/${files.length} · 成功 ${ok} · 失败 ${fail}`;
+  } else {
+    toast(`✓ 批量上传完成：${ok} 成功 / ${fail} 失败`, ok > 0 ? "success" : "error");
+  }
+  await loadTaskWorkspace(State.taskId);
+}
+
+document.getElementById("mfp-cancel").addEventListener("click", () => {
+  MD_FOLDER.cancelled = true;
+  document.getElementById("mfp-cancel").disabled = true;
 });
 
 document.getElementById("tw-run-btn").addEventListener("click", async () => {

@@ -194,30 +194,54 @@ def build_report_docx(db: Session, task: AuditTask) -> bytes:
     doc.add_page_break()
 
     # ============================================================
-    # 第三部分 各指标相关性核查明细
+    # 第三部分 各指标核查明细（按指标分组，每条 finding 5 段式呈现）
     # ============================================================
-    _h("第三部分 · 各指标相关性核查明细", size=18)
-    _p("按评价指标分组列出 AI 核查发现的相关性、合规性问题。")
+    _h("第三部分 · 各指标核查明细", size=18)
+    _p("按评价指标分组，对每条问题明确列出：评价标准（指标要求）/ 不符合之处 / "
+       "调整建议 / 法规依据 / 风险等级及整改时限。")
 
-    # 按 indicator 分组
+    # 按 indicator 分组所有 finding（不限类型，让所有指标级问题都体现）
     grouped: dict[int, list[Finding]] = defaultdict(list)
+    no_ind_findings = []
     for f in findings:
-        if f.indicator_id and f.finding_type in ("相关性问题", "合规性问题", "评分合规问题", "复核规范问题"):
+        if f.indicator_id:
             grouped[f.indicator_id].append(f)
+        else:
+            no_ind_findings.append(f)
 
-    if not grouped:
-        _p("✓ 各指标未发现相关性 / 合规性问题。")
+    if not grouped and not no_ind_findings:
+        _p("✓ 各指标未发现问题。")
     else:
         for ind_id, ind_findings in grouped.items():
             ind = db.get(Indicator, ind_id)
             if ind is None:
                 continue
+            # 指标小标题
             _h(f"指标 {ind.indicator_code} · {ind.name}", level=2, size=13)
             _label_value("分类", f"{ind.level} / {ind.category} / {ind.subcategory}")
             _label_value("满分", str(ind.max_score))
-            _p(f"共发现 {len(ind_findings)} 条问题：", size=11)
-            _add_finding_table(doc, ind_findings, _set_cn_font)
+            _label_value("问题数", f"{len(ind_findings)} 条")
             doc.add_paragraph()
+
+            # 按风险排序
+            sev_order = {"高": 0, "中": 1, "低": 2}
+            ind_findings.sort(key=lambda x: sev_order.get(x.severity, 9))
+            for sub_idx, f in enumerate(ind_findings, 1):
+                _add_finding_detailed(doc, sub_idx, f, ind, _set_cn_font, _p, _label_value)
+
+            doc.add_paragraph()
+            # 章节分隔线
+            sep = doc.add_paragraph("―" * 30)
+            sep.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            for r in sep.runs:
+                _set_cn_font(r, size=10)
+            doc.add_paragraph()
+
+        # 无指标关联的 finding（共享池或异常）
+        if no_ind_findings:
+            _h("其它问题（未关联具体指标）", level=2, size=13)
+            for sub_idx, f in enumerate(no_ind_findings, 1):
+                _add_finding_detailed(doc, sub_idx, f, None, _set_cn_font, _p, _label_value)
 
     doc.add_page_break()
 
@@ -324,7 +348,7 @@ def _count_indicators(materials: List[Material]) -> int:
 
 
 def _add_finding_table(doc, findings: List[Finding], set_font):
-    """通用：把一组 finding 渲染成表格。"""
+    """通用：把一组 finding 渲染成表格（简版，用于第二部分等汇总场景）。"""
     if not findings:
         return
     table = doc.add_table(rows=1 + len(findings), cols=5)
@@ -346,6 +370,77 @@ def _add_finding_table(doc, findings: List[Finding], set_font):
             for p in cell.paragraphs:
                 for r in p.runs:
                     set_font(r, size=10)
+
+
+def _add_finding_detailed(doc, idx: int, f: Finding, indicator,
+                          set_cn_font, p_helper, label_value):
+    """详细版：每条 finding 用 5 段式呈现 — 评价标准 / 不符合之处 / 调整建议 / 法规依据 / 风险与时限。
+
+    用于第三部分（各指标核查明细）。
+    """
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    # 标题行：[X] 不符合：{指标编号} {指标名称}
+    title = doc.add_paragraph()
+    title.paragraph_format.space_before = doc.styles["Normal"].paragraph_format.space_before
+    r0 = title.add_run(f"[{idx}] ")
+    set_cn_font(r0, name="黑体", size=11, bold=True)
+    chip = title.add_run(f"风险 {f.severity}")
+    set_cn_font(chip, name="黑体", size=10, bold=True)
+    sep = title.add_run("  ·  ")
+    set_cn_font(sep, size=10)
+    if indicator is not None:
+        t2 = title.add_run(f"{indicator.indicator_code} {indicator.name}")
+        set_cn_font(t2, name="黑体", size=11, bold=True)
+    else:
+        t2 = title.add_run(f.finding_type)
+        set_cn_font(t2, name="黑体", size=11, bold=True)
+
+    # ▸ 评价标准（来自 indicator.description / deduct_rules）
+    if indicator:
+        std = indicator.description or indicator.name
+        if indicator.deduct_rules:
+            std += f"（扣分细则：{_truncate(indicator.deduct_rules, 200)}）"
+        _bullet(doc, "评价标准", std, set_cn_font)
+
+    # ▸ 不符合之处（finding.description + evidence_location）
+    not_ok = f.description
+    if f.evidence_location:
+        not_ok += f"（位置：{f.evidence_location}）"
+    _bullet(doc, "不符合之处", not_ok, set_cn_font, highlight=True)
+
+    # ▸ 调整建议
+    if f.suggestion:
+        _bullet(doc, "调整建议", f.suggestion, set_cn_font)
+
+    # ▸ 法规依据（来自 RAG 召回 / indicator 扣分细则）
+    if f.legal_basis:
+        _bullet(doc, "法规依据", _truncate(f.legal_basis, 600), set_cn_font)
+    elif indicator and indicator.deduct_rules:
+        _bullet(doc, "法规依据", indicator.deduct_rules, set_cn_font)
+
+    # ▸ 风险等级 + 整改时限
+    _bullet(doc, "风险等级",
+            f"{f.severity}　|　建议整改时限：{_suggested_deadline(f.severity)}",
+            set_cn_font)
+
+    doc.add_paragraph()  # 间隔
+
+
+def _bullet(doc, label, value, set_cn_font, highlight=False):
+    """5 段式中的一段：▸ 标签：值"""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    p = doc.add_paragraph()
+    p.paragraph_format.left_indent = doc.styles["Normal"].paragraph_format.left_indent
+    from docx.shared import Cm
+    p.paragraph_format.left_indent = Cm(0.5)
+    p.paragraph_format.space_after = None
+    arrow = p.add_run("▸ ")
+    set_cn_font(arrow, size=10, bold=True)
+    lbl = p.add_run(f"{label}：")
+    set_cn_font(lbl, name="黑体", size=10, bold=True)
+    val = p.add_run(str(value))
+    set_cn_font(val, size=10, bold=highlight)
 
 
 def _truncate(text: str, n: int) -> str:

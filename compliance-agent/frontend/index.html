@@ -299,12 +299,20 @@
         <!-- 材料 -->
         <div id="tw-materials" class="subtab-panel hidden">
           <div class="card mb-4">
-            <div class="section-title">上传佐证材料</div>
-            <p class="text-sm text-muted mb-4">必须为每份材料绑定一个评价指标。系统自动抽取公章、签字、日期、文号等关键要素。</p>
+            <div class="flex justify-between items-center mb-3">
+              <div class="section-title" style="margin-bottom:0">上传佐证材料</div>
+              <button class="btn btn-secondary btn-sm" id="md-folder-btn">📁 批量上传文件夹</button>
+            </div>
+            <p class="text-sm text-muted mb-4">
+              单文件上传时可绑定具体指标；批量上传文件夹时材料归入共享池，
+              核查时对任务的全部指标自动匹配。系统自动抽取公章、签字、日期、文号等关键要素。
+            </p>
             <form id="material-upload-form" class="grid-3">
               <div>
                 <label class="form-label">绑定指标</label>
-                <select id="md-indicator" class="form-select" required></select>
+                <select id="md-indicator" class="form-select">
+                  <option value="">— 不绑定（归入共享池）—</option>
+                </select>
               </div>
               <div>
                 <label class="form-label">材料文件</label>
@@ -315,6 +323,30 @@
               </div>
             </form>
             <div id="md-status" class="text-sm mt-3"></div>
+          </div>
+
+          <!-- 隐藏的文件夹 input -->
+          <input type="file" id="md-folder-picker" webkitdirectory directory multiple hidden />
+
+          <!-- 文件夹批量上传进度模态 -->
+          <div id="md-folder-progress-modal" class="modal-overlay hidden">
+            <div class="modal" style="max-width:720px;max-height:88vh;display:flex;flex-direction:column">
+              <div class="modal-title">材料批量上传</div>
+              <div class="modal-sub" id="mfp-summary">准备中…</div>
+              <div style="background:var(--bg);border-radius:8px;height:8px;overflow:hidden;margin:8px 0 16px">
+                <div id="mfp-bar" style="height:100%;background:var(--blue);width:0%;transition:width 0.3s"></div>
+              </div>
+              <div style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:8px">
+                <table class="table" style="font-size:12px">
+                  <thead><tr><th style="width:32px"></th><th>文件</th><th style="width:80px">大小</th><th>消息</th></tr></thead>
+                  <tbody id="mfp-tbody"></tbody>
+                </table>
+              </div>
+              <div class="action-bar mt-3">
+                <button id="mfp-cancel" class="btn btn-ghost">取消剩余</button>
+                <button id="mfp-close" class="btn btn-secondary hidden" data-close-modal="#md-folder-progress-modal">关闭</button>
+              </div>
+            </div>
           </div>
 
           <div class="card" style="padding:0">
@@ -725,6 +757,26 @@
           <input name="eval_year" type="number" value="2025" min="2000" max="2099" class="form-input" required />
         </div>
       </div>
+
+      <!-- 核查范围 -->
+      <div class="form-group">
+        <label class="form-label">核查范围</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 0">
+          <input type="radio" name="scope" value="all" checked />
+          <span>全部指标</span>
+          <span class="text-xs text-faint">（推荐 · 对评价指标库内所有已入库指标做全面体检）</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 0">
+          <input type="radio" name="scope" value="selected" />
+          <span>仅核查选定指标</span>
+          <span class="text-xs text-faint">（只对下方勾选的若干指标核查）</span>
+        </label>
+        <div id="ct-indicator-picker" class="hidden" style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--bg);max-height:220px;overflow:auto;margin-top:6px">
+          <div class="text-xs text-muted mb-2" id="ct-indicator-count">加载指标中…</div>
+          <div id="ct-indicator-list"></div>
+        </div>
+      </div>
+
       <div id="ct-error" class="callout callout-error hidden mb-3"></div>
       <div class="action-bar">
         <button type="submit" class="btn btn-primary">创建并进入工作台</button>

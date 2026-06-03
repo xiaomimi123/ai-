@@ -194,6 +194,8 @@ class AuditTaskCreate(BaseModel):
     unit_id: int
     name: str
     eval_year: int = 2025
+    scope: str = "all"   # "all" | "selected"
+    selected_indicator_ids: List[int] = Field(default_factory=list)
 
 
 class AuditTaskOut(BaseModel):
@@ -201,6 +203,8 @@ class AuditTaskOut(BaseModel):
     unit_id: int
     name: str
     eval_year: int
+    scope: str = "all"
+    selected_indicator_ids: str = "[]"
     status: str
     summary: str
     stats: str

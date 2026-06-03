@@ -179,6 +179,9 @@ class AuditTask(Base):
     """一个单位一次核查任务（v3 §3.5）。
 
     一个任务对应一个被检查单位的内控评价报告核查，包含多个材料和多个指标。
+    支持两种核查范围（scope）：
+    - all：对评价指标库内全部已入库指标核查（推荐用于全面体检）
+    - selected：仅对 selected_indicator_ids 列出的指标核查
     """
     __tablename__ = "audit_tasks"
 
@@ -186,6 +189,9 @@ class AuditTask(Base):
     unit_id: Mapped[int] = mapped_column(ForeignKey("audit_units.id"), index=True)
     name: Mapped[str] = mapped_column(String(256))
     eval_year: Mapped[int] = mapped_column(Integer, default=2025)
+    # 核查范围
+    scope: Mapped[str] = mapped_column(String(16), default="all")
+    selected_indicator_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON 数组
     # AI 初核状态：pending → running → ai_done → reviewing(人工复核中) → finalized(已定稿) → archived
     status: Mapped[str] = mapped_column(String(32), default="pending")
     summary: Mapped[str] = mapped_column(Text, default="")

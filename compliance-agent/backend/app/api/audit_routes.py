@@ -80,7 +80,10 @@ def create_task(req: AuditTaskCreate,
                 user: User = Depends(require_auditor)):
     return audit_service.create_task(
         db, unit_id=req.unit_id, name=req.name,
-        eval_year=req.eval_year, user=user,
+        eval_year=req.eval_year,
+        scope=req.scope,
+        selected_indicator_ids=req.selected_indicator_ids,
+        user=user,
     )
 
 

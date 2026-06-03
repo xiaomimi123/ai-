@@ -51,19 +51,31 @@ def create_unit(db: Session, *, name: str, code: str = "", level: str = "单位"
 # 任务
 # ============================================================
 def create_task(db: Session, *, unit_id: int, name: str, eval_year: int = 2025,
+                scope: str = "all",
+                selected_indicator_ids: Optional[list] = None,
                 user: Optional[User] = None) -> AuditTask:
     unit = db.get(AuditUnit, unit_id)
     if not unit:
         raise HTTPException(404, "单位不存在")
+    if scope not in ("all", "selected"):
+        raise HTTPException(400, f"无效 scope: {scope}")
+    sel_ids = selected_indicator_ids or []
+    if scope == "selected" and not sel_ids:
+        raise HTTPException(400, "「仅核查选定指标」时必须选择至少一个指标")
+
+    import json as _json
     task = AuditTask(
         unit_id=unit_id, name=name, eval_year=eval_year,
+        scope=scope,
+        selected_indicator_ids=_json.dumps(sel_ids),
         status="pending", summary="等待上传材料",
         created_by=user.id if user else None,
     )
     db.add(task); db.flush()
+    scope_label = "全部指标" if scope == "all" else f"选定 {len(sel_ids)} 个指标"
     log_action(db, user, "task.create",
                target_type="task", target_id=task.id,
-               detail=f"为「{unit.name}」创建任务「{name}」（{eval_year}）")
+               detail=f"为「{unit.name}」创建任务「{name}」（{eval_year}，{scope_label}）")
     db.commit(); db.refresh(task)
     return task
 
