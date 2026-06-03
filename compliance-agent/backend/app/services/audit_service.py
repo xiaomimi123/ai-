@@ -148,40 +148,85 @@ def upload_material(db: Session, task: AuditTask, *,
 
 
 # ============================================================
-# 材料批量自动绑定（用于旧任务一键修复 / 用户主动重算）
+# 材料批量自动绑定（关键词 + AI 阅读双阶段）
 # ============================================================
-def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = None) -> dict:
+def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = None,
+                        use_ai: bool = True) -> dict:
     """对任务下未绑定指标的材料做批量自动绑定。
 
-    返回 {checked, bound_now, still_unbound, samples}：
-    - checked: 处理的材料数
-    - bound_now: 本次新绑定的数量
-    - still_unbound: 仍未能绑定的数量（关键词命中不唯一或完全没命中）
-    - samples: 前 5 条新绑定示例 [{file, indicator_code}]
+    两阶段：
+    1) **关键词匹配**：文件名/路径含指标关键词的直接命中（毫秒级，准）
+    2) **AI 阅读分类**：剩余未绑定材料发给 LLM，根据文件名+解析文本分类
+       （30 秒 - 2 分钟，大幅提高命中率）
+
+    返回：
+    {checked, keyword_bound, ai_bound, still_unbound, samples, ai_used}
     """
     from app.services.material_matcher import match_indicator
     indicators = db.query(Indicator).all()
-    checked = bound = 0
-    samples = []
-    for m in task.materials:
-        if m.indicator_id:
-            continue
-        checked += 1
+
+    # 第 1 阶段：关键词匹配
+    unbound_materials: list[Material] = [m for m in task.materials if not m.indicator_id]
+    checked = len(unbound_materials)
+    keyword_bound = 0
+    still_unbound: list[Material] = []
+    samples: list[dict] = []
+
+    for m in unbound_materials:
         ind = match_indicator(m.file_name, indicators)
         if ind:
             m.indicator_id = ind.id
-            bound += 1
+            keyword_bound += 1
             if len(samples) < 5:
-                samples.append({"file": m.file_name[:60], "indicator_code": ind.indicator_code})
-    if bound:
+                samples.append({
+                    "file": m.file_name[:60],
+                    "indicator_code": ind.indicator_code,
+                    "source": "keyword",
+                })
+        else:
+            still_unbound.append(m)
+
+    db.flush()
+
+    # 第 2 阶段：AI 阅读分类（可选）
+    ai_bound = 0
+    ai_used = False
+    if use_ai and still_unbound:
+        try:
+            from app.llm.factory import get_llm_client
+            from app.llm.stub import StubLLMClient
+            from app.services.ai_material_classifier import ai_classify_materials
+            llm = get_llm_client(db)
+            ai_used = not isinstance(llm, StubLLMClient)
+            mapping = ai_classify_materials(db, task, llm, still_unbound, indicators)
+            for m in still_unbound:
+                iid = mapping.get(m.id)
+                if iid is None:
+                    continue
+                m.indicator_id = iid
+                ai_bound += 1
+                if len(samples) < 10:
+                    ind = next((x for x in indicators if x.id == iid), None)
+                    samples.append({
+                        "file": m.file_name[:60],
+                        "indicator_code": ind.indicator_code if ind else "?",
+                        "source": "ai",
+                    })
+        except Exception as exc:
+            print(f"[auto_bind] AI 分类失败（仅关键词生效）: {exc}")
+
+    if keyword_bound or ai_bound:
         log_action(db, user, "material.auto_bind",
                    target_type="task", target_id=task.id,
-                   detail=f"自动绑定 {bound}/{checked} 份材料到指标")
+                   detail=f"自动绑定 关键词 {keyword_bound} + AI {ai_bound} / 共 {checked}")
     db.commit()
     return {
         "checked": checked,
-        "bound_now": bound,
-        "still_unbound": checked - bound,
+        "keyword_bound": keyword_bound,
+        "ai_bound": ai_bound,
+        "bound_now": keyword_bound + ai_bound,        # 兼容旧字段
+        "still_unbound": checked - keyword_bound - ai_bound,
+        "ai_used": ai_used,
         "samples": samples,
     }
 

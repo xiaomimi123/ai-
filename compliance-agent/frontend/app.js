@@ -949,14 +949,31 @@ function renderMaterials() {
   }
 }
 
-// AI 自动绑定（批量）
+// AI 自动绑定（关键词 + LLM 阅读两阶段）
 window.runAutoBind = async function() {
   if (!State.taskId) return;
+  const btn = document.querySelector('[onclick="runAutoBind()"]');
+  if (btn) {
+    btn.disabled = true;
+    btn.dataset.origHtml = btn.innerHTML;
+    btn.innerHTML = `<span class="tw-progress-spinner" style="border-color:#ccc;border-top-color:#0071e3"></span> <span>AI 阅读材料中（约 1-2 分钟）…</span>`;
+  }
+  toast("AI 正在阅读材料内容，请稍候…（约 1-2 分钟）");
   try {
     const res = await api(`/tasks/${State.taskId}/materials/auto-bind`, { method: "POST" });
-    toast(`✓ 自动绑定 ${res.bound_now}/${res.checked} 份，剩 ${res.still_unbound} 份请手动绑定`, "success");
+    const detail = res.ai_used
+      ? `关键词命中 ${res.keyword_bound} + AI 命中 ${res.ai_bound}`
+      : `关键词命中 ${res.keyword_bound}（未启用 LLM）`;
+    toast(`✓ ${detail}，剩 ${res.still_unbound} 份未绑定`, "success");
     await loadTaskWorkspace(State.taskId);
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) {
+    toast(e.message, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      if (btn.dataset.origHtml) btn.innerHTML = btn.dataset.origHtml;
+    }
+  }
 };
 
 document.getElementById("material-upload-form").addEventListener("submit", async ev => {
