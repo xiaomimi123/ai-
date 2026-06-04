@@ -662,6 +662,7 @@ function renderSubtab() {
   if (State.subtab === "overview") renderOverview();
   if (State.subtab === "materials") renderMaterials();
   if (State.subtab === "findings") renderFindings();
+  if (State.subtab === "review") loadMaterialReview();
   if (State.subtab === "worksheet") loadWorksheet();
 }
 
@@ -684,6 +685,217 @@ function renderFlagBadges(flagsObj) {
     else if (!pos && neg) { cls = "ws-flag-bad"; label = nl; }
     return `<span class="ws-flag ${cls}">${label}</span>`;
   }).join("");
+}
+
+// ============================================================
+// 📋 材料审核（V4）
+// ============================================================
+async function loadMaterialReview() {
+  const summary = document.getElementById("mr-summary");
+  summary.innerHTML = `<span class="text-muted">加载中…</span>`;
+  let data;
+  try {
+    data = await api(`/tasks/${State.taskId}/material-review`);
+  } catch (e) {
+    summary.innerHTML = `<div class="callout callout-error">加载失败：${esc(e.message)}</div>`;
+    return;
+  }
+  State.materialReview = data;
+  document.getElementById("tw-count-review").textContent =
+    (data.duplicates.same_task_groups.length + data.duplicates.cross_task_pairs.length) || "";
+
+  renderMrSummary(data);
+  renderMrDuplicates(data.duplicates);
+  renderMrContent(data.content_review);
+  renderMrMatching(data.matching, data.bind_sources);
+  renderMrTimeline(data.timeline);
+}
+
+function renderMrSummary(data) {
+  const summary = document.getElementById("mr-summary");
+  const dup = data.duplicates.same_task_groups.length + data.duplicates.cross_task_pairs.length;
+  const m = data.matching;
+  const lowMatch = m.low_match_materials.length;
+  summary.innerHTML = `
+    <span><strong>${m.total_materials}</strong> 份材料</span>
+    <span>已绑定 <strong>${m.bound}</strong> / 未绑定 <strong style="color:${m.unbound > 0 ? 'var(--brand-red)' : 'inherit'}">${m.unbound}</strong></span>
+    <span>指标覆盖 <strong>${m.covered_indicators}/${m.target_indicators}</strong>（缺 <strong>${m.uncovered_indicators}</strong> 项）</span>
+    <span>重复 <strong style="color:${dup > 0 ? 'var(--brand-red)' : '#1f7a3e'}">${dup}</strong> 组</span>
+    <span>匹配度低 <strong style="color:${lowMatch > 0 ? '#d97706' : 'inherit'}">${lowMatch}</strong> 份</span>
+  `;
+}
+
+function renderMrDuplicates(dup) {
+  const box = document.getElementById("mr-dup-content");
+  const cntEl = document.getElementById("mr-dup-count");
+  const sameGroups = dup.same_task_groups || [];
+  const crossPairs = dup.cross_task_pairs || [];
+  cntEl.textContent = `同任务 ${sameGroups.length} 组 · 跨任务 ${crossPairs.length} 对`;
+
+  if (sameGroups.length === 0 && crossPairs.length === 0) {
+    box.innerHTML = `<div class="callout callout-success">✓ 未检出重复材料</div>`;
+    return;
+  }
+
+  let html = "";
+  if (sameGroups.length > 0) {
+    html += `<div class="text-sm" style="font-weight:600;margin-bottom:8px">同任务内重复（${sameGroups.length} 组）：</div>`;
+    html += sameGroups.map((g, idx) => `
+      <div style="border:1px solid #f2c0c2;background:#fdecec;border-radius:8px;padding:12px;margin-bottom:10px">
+        <div class="text-sm mb-2"><strong>组 ${idx + 1}</strong> · ${g.count} 份完全相同 · hash <code style="font-size:10px;color:#888">${g.content_hash.slice(0, 12)}…</code></div>
+        ${g.materials.map((m, i) => `
+          <div class="flex justify-between items-center" style="padding:6px 0;${i > 0 ? 'border-top:1px dashed #f2c0c2' : ''}">
+            <div class="text-sm">
+              <span class="code-id">#${pad(m.id)}</span>
+              ${esc(m.file_name)}
+              <span class="text-xs text-muted">${m.uploaded_at ? fmtTime(m.uploaded_at) : ''}</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="mergeDupKeep('${g.content_hash}', ${m.id})">
+              保留此份 + 合并其它
+            </button>
+          </div>
+        `).join("")}
+      </div>
+    `).join("");
+  }
+  if (crossPairs.length > 0) {
+    html += `<div class="text-sm" style="font-weight:600;margin-top:16px;margin-bottom:8px">跨任务材料重复（${crossPairs.length} 对）：</div>`;
+    html += crossPairs.map(p => `
+      <div style="border:1px solid #fde4a6;background:#fff8e1;border-radius:8px;padding:10px;margin-bottom:8px">
+        <div class="text-sm">
+          <span class="code-id">#${pad(p.my_material.id)}</span> ${esc(p.my_material.file_name)}
+          <span class="text-muted">↔</span>
+          <a href="#/tasks/${p.other_task_id}" class="text-blue">任务 #${p.other_task_id} ${esc(p.other_task_name)}</a>
+        </div>
+        <div class="text-xs text-muted" style="margin-top:4px">⚠️ 疑似跨单位共享材料或抄送</div>
+      </div>
+    `).join("");
+  }
+  box.innerHTML = html;
+}
+
+window.mergeDupKeep = async function(contentHash, keepId) {
+  if (!confirm(`确定保留 #${pad(keepId)}，删除该组其它重复材料？`)) return;
+  try {
+    const res = await api(`/tasks/${State.taskId}/materials/merge-duplicates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content_hash: contentHash, keep_material_id: keepId }),
+    });
+    toast(`✓ 已合并：保留 #${pad(res.kept)}，删除 ${res.removed} 份`, "success");
+    await loadMaterialReview();
+    // 也刷新材料列表
+    await loadTaskWorkspace(State.taskId);
+    State.subtab = "review";
+    document.querySelectorAll('.subnav-item').forEach(x =>
+      x.classList.toggle("active", x.dataset.subtab === "review"));
+    renderSubtab();
+  } catch (e) { toast(e.message, "error"); }
+};
+
+function renderMrContent(rows) {
+  const tbody = document.getElementById("mr-content-tbody");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">尚无材料</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const ke = r.key_elements || {};
+    const flags = r.flags || {};
+    const seal = ke.has_official_seal ? `<span style="color:#1f7a3e">✓</span>` : `<span style="color:#b8262b">✗</span>`;
+    const sig = ke.has_signature ? `<span style="color:#1f7a3e">✓</span>` : `<span style="color:#b8262b">✗</span>`;
+    const year = ke.issue_year ? `<span class="tag" style="font-size:11px">${ke.issue_year}</span>` : `<span class="text-muted">—</span>`;
+    const docno = ke.document_number ? `<span class="text-xs" style="font-family:monospace">${esc(ke.document_number)}</span>` : `<span class="text-muted">—</span>`;
+    // 5 维度 chip
+    const chips = [];
+    if (flags.real) chips.push(`<span class="ws-flag ws-flag-ok">真实</span>`);
+    if (flags.fake) chips.push(`<span class="ws-flag ws-flag-bad">涉嫌造假</span>`);
+    if (flags.incomplete) chips.push(`<span class="ws-flag ws-flag-bad">不完整</span>`);
+    if (flags.non_compliant) chips.push(`<span class="ws-flag ws-flag-bad">违法违规</span>`);
+    if (flags.duplicate) chips.push(`<span class="ws-flag ws-flag-bad">重复</span>`);
+    if (flags.match_low) chips.push(`<span class="ws-flag ws-flag-bad">匹配度低</span>`);
+    if (chips.length === 0) chips.push(`<span class="text-muted">—</span>`);
+    const ind = r.indicator_code ? `<span class="code-id">${esc(r.indicator_code)}</span> ${esc((r.indicator_name || "").slice(0, 8))}` : `<span class="text-muted">未绑定</span>`;
+    return `
+      <tr>
+        <td><span class="code-id">#${pad(r.material_id)}</span></td>
+        <td class="text-sm">${esc(r.file_name)}</td>
+        <td class="text-xs">${ind}</td>
+        <td class="text-center">${seal}</td>
+        <td class="text-center">${sig}</td>
+        <td class="text-center">${year}</td>
+        <td>${docno}</td>
+        <td>${chips.join(" ")}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderMrMatching(matching, bindSources) {
+  const box = document.getElementById("mr-matching");
+  const m = matching;
+  const bs = bindSources || {};
+  const total = (bs.by_keyword || 0) + (bs.by_ai || 0) + (bs.by_manual || 0) + (bs.unbound || 0);
+  const pct = v => total ? Math.round((v / total) * 100) : 0;
+  const bar = (color, value) => `<div style="background:${color};height:8px;width:${pct(value)}%;display:inline-block;vertical-align:middle"></div>`;
+
+  let uncoveredHtml = "";
+  if (m.uncovered_list.length) {
+    uncoveredHtml = `
+      <div style="margin-top:12px">
+        <div class="text-sm" style="font-weight:600;margin-bottom:6px">缺材料指标（共 ${m.uncovered_indicators} 项，显示前 ${m.uncovered_list.length}）：</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${m.uncovered_list.map(i => `<span class="ws-flag ws-flag-na">${esc(i.indicator_code)} ${esc((i.name || "").slice(0, 10))}</span>`).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  let lowMatchHtml = "";
+  if (m.low_match_materials.length) {
+    lowMatchHtml = `
+      <div style="margin-top:12px">
+        <div class="text-sm" style="font-weight:600;margin-bottom:6px;color:#d97706">⚠️ 匹配度低的材料（${m.low_match_materials.length}）：</div>
+        ${m.low_match_materials.map(x => `
+          <div class="text-sm" style="padding:4px 0">
+            <span class="code-id">#${pad(x.material_id)}</span> ${esc(x.file_name)}
+            → 当前绑定 <span class="code-id">${esc(x.indicator_code || "")}</span> ${esc((x.indicator_name || "").slice(0, 10))}
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  box.innerHTML = `
+    <div class="text-sm" style="font-weight:600;margin-bottom:6px">绑定来源分布：</div>
+    <div style="font-size:12px;line-height:1.8">
+      <div>关键词匹配 ${bs.by_keyword || 0} 份 (${pct(bs.by_keyword || 0)}%) <span style="display:inline-block;background:#dde6f4;width:100%;max-width:300px;height:8px;border-radius:2px;vertical-align:middle"><span style="display:block;background:#0071e3;width:${pct(bs.by_keyword || 0)}%;height:100%"></span></span></div>
+      <div>AI 阅读匹配 ${bs.by_ai || 0} 份 (${pct(bs.by_ai || 0)}%)</div>
+      <div>手动指定 ${bs.by_manual || 0} 份 (${pct(bs.by_manual || 0)}%)</div>
+      ${(bs.unbound || 0) > 0 ? `<div style="color:#d97706">未绑定 ${bs.unbound} 份 (${pct(bs.unbound)}%)</div>` : ""}
+    </div>
+    <div style="margin-top:10px;font-size:12px">
+      指标覆盖度：<strong>${m.covered_indicators}</strong> / ${m.target_indicators} 项（覆盖率 ${m.target_indicators ? Math.round(m.covered_indicators / m.target_indicators * 100) : 0}%）
+    </div>
+    ${uncoveredHtml}
+    ${lowMatchHtml}
+  `;
+}
+
+function renderMrTimeline(events) {
+  const box = document.getElementById("mr-timeline");
+  if (!events.length) {
+    box.innerHTML = `<div class="empty-state">暂无操作记录</div>`;
+    return;
+  }
+  box.innerHTML = events.map(e => `
+    <div class="flex items-start" style="padding:8px 0;border-bottom:1px solid var(--divider);font-size:13px">
+      <div style="flex:0 0 130px;color:var(--text-secondary)">${e.at ? fmtTime(e.at) : ''}</div>
+      <div style="flex:0 0 140px">${esc(e.label)}</div>
+      <div style="flex:1;color:var(--text-secondary)">${esc(e.detail || '')}</div>
+      <div style="flex:0 0 80px;text-align:right;color:var(--text-tertiary);font-size:11px">${esc(e.user || '')}</div>
+    </div>
+  `).join("");
 }
 
 async function loadWorksheet() {

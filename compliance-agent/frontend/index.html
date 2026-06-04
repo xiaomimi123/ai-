@@ -285,6 +285,7 @@
         <button class="subnav-item active" data-subtab="overview">概览</button>
         <button class="subnav-item" data-subtab="materials">材料 <span class="subnav-count" id="tw-count-materials">0</span></button>
         <button class="subnav-item" data-subtab="findings">核查发现 <span class="subnav-count" id="tw-count-findings">0</span></button>
+        <button class="subnav-item" data-subtab="review">📋 材料审核 <span class="subnav-count" id="tw-count-review">0</span></button>
         <button class="subnav-item" data-subtab="worksheet">工作底稿 <span class="subnav-count" id="tw-count-worksheet">0</span></button>
       </nav>
 
@@ -392,6 +393,58 @@
                 <div>从左侧列表选择一条发现<br/>进行复核标注或整改跟踪</div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 📋 材料审核（V4） -->
+        <div id="tw-review" class="subtab-panel hidden">
+          <div class="card mb-4">
+            <div class="section-title" style="margin-bottom:8px">📋 材料审核全景</div>
+            <div id="mr-summary" class="text-sm" style="display:flex;gap:24px;flex-wrap:wrap;color:var(--text-secondary)"></div>
+          </div>
+
+          <!-- 重复性检测 -->
+          <div class="card mb-4">
+            <div class="flex justify-between items-center mb-3">
+              <div class="section-title" style="margin-bottom:0">🔁 重复性检测</div>
+              <div id="mr-dup-count" class="text-sm text-muted"></div>
+            </div>
+            <div id="mr-dup-content"></div>
+          </div>
+
+          <!-- 内容审核 -->
+          <div class="card mb-4">
+            <div class="section-title">🔍 内容审核（每份材料的关键要素与判定）</div>
+            <div class="text-sm text-muted mb-3">系统自动抽取 公章 / 签字 / 日期 / 文号；AI 给出 5 对维度判定。</div>
+            <div style="overflow-x:auto">
+              <table class="table table-compact">
+                <thead>
+                  <tr>
+                    <th style="width:60px">#</th>
+                    <th>文件</th>
+                    <th style="width:120px">绑定指标</th>
+                    <th style="width:50px">公章</th>
+                    <th style="width:50px">签字</th>
+                    <th style="width:70px">日期</th>
+                    <th style="width:140px">文号</th>
+                    <th>AI 判定</th>
+                  </tr>
+                </thead>
+                <tbody id="mr-content-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 匹配情况 -->
+          <div class="card mb-4">
+            <div class="section-title">🔗 匹配情况</div>
+            <div id="mr-matching"></div>
+          </div>
+
+          <!-- 时间线 -->
+          <div class="card mb-4">
+            <div class="section-title">📅 更新与操作时间线</div>
+            <div id="mr-timeline"></div>
           </div>
         </div>
 

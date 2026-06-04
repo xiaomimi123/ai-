@@ -306,6 +306,56 @@ def download_task_report(task_id: int,
 
 
 # ============================================================
+# 材料审核聚合视图（4 类数据）
+# ============================================================
+@tasks_router.get("/{task_id}/material-review")
+def get_material_review(task_id: int,
+                        db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """聚合：重复检测 / 内容审核 / 匹配情况 / 操作时间线。"""
+    from app.services import material_review_service
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权查看")
+    return material_review_service.review_overview(db, task)
+
+
+class MergeDuplicatesRequest(BaseModel):
+    content_hash: str
+    keep_material_id: int
+
+
+@tasks_router.post("/{task_id}/materials/merge-duplicates")
+def merge_duplicate_materials(task_id: int,
+                              req: MergeDuplicatesRequest,
+                              db: Session = Depends(get_db),
+                              user: User = Depends(require_auditor)):
+    """同任务内 content_hash 相同的多份材料，保留 keep_material_id，删除其余。
+
+    被删材料关联的 Finding 不删，只 material_id 设 NULL（保留可追溯）。
+    """
+    from app.services import material_review_service
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权操作此任务")
+    res = material_review_service.merge_duplicate_group(
+        db, task, req.content_hash, req.keep_material_id,
+        user_id=user.id if user else None,
+    )
+    if res.get("error"):
+        raise HTTPException(400, res["error"])
+    log_action(db, user, "material.merge",
+               target_type="task", target_id=task.id,
+               detail=f"合并重复材料：保留 #{res['kept']}，删除 {res['removed']} 份")
+    db.commit()
+    return res
+
+
+# ============================================================
 # 工作底稿（AI 阅卷 → 底稿 → 报告）
 # ============================================================
 @tasks_router.get("/{task_id}/worksheet", response_model=WorksheetOut)
