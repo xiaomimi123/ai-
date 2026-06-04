@@ -166,16 +166,22 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
         task.progress_total = len(target_indicators)
         db.commit()
 
+        # ============================================================
+        # 阶段 1：串行跑刚性规则（CPU 操作，毫秒级）+ 收集需要 LLM 的任务
+        # 进度按指标推进（即使后面 LLM 阶段是并发，前端能看到逐项准备）
+        # ============================================================
         indicators_checked = 0
-        for idx, indicator in enumerate(target_indicators, start=1):
-            # 进度回写（让前端轮询能看到）
-            label_name = (indicator.name or "")[:28]
-            task.progress_text = f"{indicator.indicator_code} {label_name}"
-            db.commit()
+        # 法规检索缓存：同一指标的 legal_basis 只查一次（即使有多份材料）
+        legal_basis_cache: dict[int, str] = {}
+        # 待并发的 LLM 任务：(indicator, material, text, legal_basis)
+        llm_tasks: list[tuple] = []
 
+        for idx, indicator in enumerate(target_indicators, start=1):
+            label_name = (indicator.name or "")[:28]
+            task.progress_text = f"准备 {indicator.indicator_code} {label_name}"
+            task.progress_current = idx
             related = _materials_for_indicator(materials, indicator)
             if not related:
-                # V3：未上传材料 → 低风险提示（不再按中风险扣 25%，改为只扣 10%）
                 db.add(Finding(
                     task_id=task.id,
                     material_id=None,
@@ -189,34 +195,68 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
                     suggestion=f"请补充与指标【{indicator.name}】相关的材料（建议：{indicator.required_materials or '查看指标定义'}）",
                     source="rule",
                 ))
-                task.progress_current = idx
-                db.commit()
                 continue
 
             indicators_checked += 1
+            # 该指标的 legal_basis 缓存（避免 N 份材料重复查 RAG）
+            if llm_available and indicator.id not in legal_basis_cache:
+                legal_basis_cache[indicator.id] = _retrieve_legal_basis(indicator)
+
             for material in related:
                 text = material.parsed_text or ""
                 ke = _ke_from_json(material.key_elements)
-
-                # 1) 刚性规则
+                # 1) 刚性规则（串行，快）
                 rule_results = run_rule_checks(
                     material, text, ke, indicator, check_items,
                     eval_year=task.eval_year,
                 )
                 for r in rule_results:
                     db.add(_to_finding(task.id, material.id, indicator, r, source="rule"))
-
-                # 2) LLM 语义
+                # 2) 收集 LLM 任务（不在这里跑，下面并发跑）
                 if llm_available:
-                    legal_basis = _retrieve_legal_basis(indicator)
-                    llm_results = run_llm_checks(
-                        llm, material, text, indicator, check_items, legal_basis=legal_basis,
+                    llm_tasks.append(
+                        (indicator, material, text, legal_basis_cache.get(indicator.id, ""))
                     )
-                    for l in llm_results:
-                        db.add(_to_finding(task.id, material.id, indicator, l, source="llm"))
+        db.commit()  # 刚性规则的 finding 先落盘
 
-            task.progress_current = idx
+        # ============================================================
+        # 阶段 2：并发跑 LLM（核心提速点）
+        # 用 ThreadPoolExecutor 把 N 个 LLM 调用并发执行
+        # ============================================================
+        if llm_available and llm_tasks:
+            import os
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            max_workers = int(os.environ.get("LLM_CONCURRENCY", "16"))
+            total = len(llm_tasks)
+            # 阶段 1 已把 progress_current 推到 total（指标维度），LLM 阶段只改文字
+            task.progress_text = f"AI 阅卷中（并发 {max_workers}）0/{total}"
             db.commit()
+
+            done_count = 0
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {
+                    pool.submit(
+                        run_llm_checks, llm, mat, text, ind, check_items,
+                        legal_basis=lb,
+                    ): (ind, mat)
+                    for (ind, mat, text, lb) in llm_tasks
+                }
+                for fut in as_completed(futures):
+                    ind, mat = futures[fut]
+                    try:
+                        llm_findings = fut.result()
+                        for l in llm_findings:
+                            db.add(_to_finding(task.id, mat.id, ind, l, source="llm"))
+                    except Exception as exc:
+                        print(f"[LLM 并发] 失败 {ind.indicator_code}/{mat.file_name}: {exc}")
+                    done_count += 1
+                    # 每 5 项 commit 一次（只改文字，数字保留 indicator 维度）
+                    if done_count % 5 == 0 or done_count == total:
+                        task.progress_text = (
+                            f"AI 阅卷 {done_count}/{total} · 最近：{ind.indicator_code} {(ind.name or '')[:16]}"
+                        )
+                        db.commit()
 
         db.flush()
         # V3：去重聚合 — 同 (material, indicator, type) 下只保留最严重 1 条
