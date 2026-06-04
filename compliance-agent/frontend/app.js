@@ -57,7 +57,15 @@ function esc(s) {
 function fmtTime(s) {
   if (!s) return "—";
   try {
-    return new Date(s).toLocaleString("zh-CN", {
+    // 后端 datetime.utcnow().isoformat() 输出形如 "2026-06-04T08:03:00"
+    // 不带时区后缀，JS 默认按本地时区解析会差 8 小时；这里补 "Z" 强制按 UTC 解析
+    // 再由 toLocaleString 转成浏览器本地时区显示（中国大陆即 +08:00）
+    let iso = String(s);
+    if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso)) {
+      iso = iso + "Z";
+    }
+    return new Date(iso).toLocaleString("zh-CN", {
+      timeZone: "Asia/Shanghai",
       month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
     });
   } catch { return s; }
