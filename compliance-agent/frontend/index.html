@@ -285,7 +285,7 @@
         <button class="subnav-item active" data-subtab="overview">概览</button>
         <button class="subnav-item" data-subtab="materials">材料 <span class="subnav-count" id="tw-count-materials">0</span></button>
         <button class="subnav-item" data-subtab="findings">核查发现 <span class="subnav-count" id="tw-count-findings">0</span></button>
-        <button class="subnav-item" data-subtab="review">📋 材料审核 <span class="subnav-count" id="tw-count-review">0</span></button>
+        <button class="subnav-item" data-subtab="review">材料审核 <span class="subnav-count" id="tw-count-review">0</span></button>
         <button class="subnav-item" data-subtab="worksheet">工作底稿 <span class="subnav-count" id="tw-count-worksheet">0</span></button>
       </nav>
 
@@ -396,17 +396,17 @@
           </div>
         </div>
 
-        <!-- 📋 材料审核（V4） -->
+        <!-- 材料审核（V4） -->
         <div id="tw-review" class="subtab-panel hidden">
           <div class="card mb-4">
-            <div class="section-title" style="margin-bottom:8px">📋 材料审核全景</div>
+            <div class="section-title" style="margin-bottom:8px">材料审核全景</div>
             <div id="mr-summary" class="text-sm" style="display:flex;gap:24px;flex-wrap:wrap;color:var(--text-secondary)"></div>
           </div>
 
           <!-- 重复性检测 -->
           <div class="card mb-4">
             <div class="flex justify-between items-center mb-3">
-              <div class="section-title" style="margin-bottom:0">🔁 重复性检测</div>
+              <div class="section-title" style="margin-bottom:0">重复性检测</div>
               <div id="mr-dup-count" class="text-sm text-muted"></div>
             </div>
             <div id="mr-dup-content"></div>
@@ -414,7 +414,7 @@
 
           <!-- 内容审核 -->
           <div class="card mb-4">
-            <div class="section-title">🔍 内容审核（每份材料的关键要素与判定）</div>
+            <div class="section-title">内容审核（每份材料的关键要素与判定）</div>
             <div class="text-sm text-muted mb-3">系统自动抽取 公章 / 签字 / 日期 / 文号；AI 给出 5 对维度判定。</div>
             <div style="overflow-x:auto">
               <table class="table table-compact">
@@ -437,13 +437,13 @@
 
           <!-- 匹配情况 -->
           <div class="card mb-4">
-            <div class="section-title">🔗 匹配情况</div>
+            <div class="section-title">匹配情况</div>
             <div id="mr-matching"></div>
           </div>
 
           <!-- 时间线 -->
           <div class="card mb-4">
-            <div class="section-title">📅 更新与操作时间线</div>
+            <div class="section-title">更新与操作时间线</div>
             <div id="mr-timeline"></div>
           </div>
         </div>
@@ -505,7 +505,7 @@
       </header>
       <div class="page-body">
         <div class="flex gap-3 mb-4" style="flex-wrap:wrap;align-items:center">
-          <input id="reg-search" class="form-input" placeholder="🔍 搜索标题、文号、发文机关..." style="max-width:320px" />
+          <input id="reg-search" class="form-input" placeholder="搜索标题、文号、发文机关..." style="max-width:320px" />
           <select id="reg-filter-type" class="form-select" style="max-width:180px">
             <option value="">全部类型</option>
           </select>
@@ -555,7 +555,7 @@
       </header>
       <div class="page-body">
         <div class="flex gap-3 mb-4" style="flex-wrap:wrap;align-items:center">
-          <input id="ind-search" class="form-input" placeholder="🔍 搜索编号、名称、分类..." style="max-width:320px" />
+          <input id="ind-search" class="form-input" placeholder="搜索编号、名称、分类..." style="max-width:320px" />
           <select id="ind-filter-level" class="form-select" style="max-width:160px">
             <option value="">全部层级</option>
             <option value="单位">单位评价</option>
@@ -601,7 +601,7 @@
       </header>
       <div class="page-body">
         <div class="flex gap-3 mb-4" style="flex-wrap:wrap;align-items:center">
-          <input id="ci-search" class="form-input" placeholder="🔍 搜索编号、描述..." style="max-width:320px" />
+          <input id="ci-search" class="form-input" placeholder="搜索编号、描述..." style="max-width:320px" />
           <select id="ci-filter-dim" class="form-select" style="max-width:180px">
             <option value="">全部维度</option>
             <option>总体合规性</option>
@@ -891,7 +891,7 @@
       <div class="form-group">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0">
           <input type="checkbox" id="ct-fast-mode" />
-          <span><strong>⚡ 快速模式</strong></span>
+          <span><strong>快速模式</strong></span>
           <span class="text-xs text-faint">跳过 AI 深度思考，全量核查约 3-4 分钟（默认 9-10 分钟）。精度略低，适合先快速看效果。</span>
         </label>
       </div>
@@ -982,7 +982,7 @@
       <label class="form-label">分类策略</label>
       <select id="fc-strategy" class="form-select">
         <option value="ai">🤖 AI 智能识别（推荐）— DeepSeek 逐份判断</option>
-        <option value="uniform">📌 统一应用 — 全部文件套用相同分类</option>
+        <option value="uniform">统一应用 — 全部文件套用相同分类</option>
         <option value="path">📂 按子文件夹路径 — 一级目录名作为文档类型</option>
       </select>
     </div>
@@ -991,7 +991,7 @@
     <div id="fc-strategy-ai" class="callout callout-info" style="font-size:13px">
       系统会依次解析每份文件的标题 + 头部 800 字 → 调用 DeepSeek 智能判断。
       <br/>每份约 1-2 秒，文件数较多时请耐心等待。
-      <br/>⚠️ 需要在「后台管理 → 大语言模型」配置 API Key。
+      <br/>注意：需要在「后台管理 → 大语言模型」配置 API Key。
     </div>
 
     <!-- 统一应用策略 -->
@@ -1093,7 +1093,7 @@
     </div>
 
     <div class="callout callout-warn mt-3" style="font-size:12px">
-      ⓘ 此处显示前 50 条预览。确认无误后点「确认导入」会处理全部条目。
+      提示：此处显示前 50 条预览。确认无误后点「确认导入」会处理全部条目。
       重复编号将被自动跳过。
     </div>
 

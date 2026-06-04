@@ -333,7 +333,7 @@ async function loadTasks() {
             ${t.status === "running" && t.progress_total > 0
               ? `<span class="text-xs text-muted" style="margin-left:6px">${t.progress_current}/${t.progress_total}</span>`
               : ""}
-            ${t.fast_mode ? `<span class="text-xs" style="margin-left:6px;color:#856404">⚡</span>` : ""}
+            ${t.fast_mode ? `<span class="text-xs" style="margin-left:6px;color:#856404">[快速]</span>` : ""}
           </td>
           <td onclick="navigate('#/tasks/${t.id}')" class="text-sm text-muted">${esc(t.summary || "—")}</td>
           <td class="text-right" style="white-space:nowrap">
@@ -477,7 +477,7 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
     });
     document.getElementById("create-task-modal").classList.add("hidden");
     const scopeLbl = scope === "all" ? "全部指标" : `${selectedIds.length} 个指标`;
-    const modeLbl = fastMode ? " · ⚡快速" : "";
+    const modeLbl = fastMode ? " · 快速模式" : "";
     toast(`✓ 任务 #${pad(task.id)} 已创建（${scopeLbl}${modeLbl}）`, "success");
     navigate(`#/tasks/${task.id}`);
   } catch (e) {
@@ -534,7 +534,7 @@ function renderProgress(task) {
   document.getElementById("tw-progress-fill").style.width = pct + "%";
   document.getElementById("tw-progress-now").textContent = task.progress_text || "准备中…";
   const modeEl = document.getElementById("tw-progress-mode");
-  modeEl.textContent = task.fast_mode ? "⚡ 快速模式" : "";
+  modeEl.textContent = task.fast_mode ? "快速模式" : "";
   modeEl.style.display = task.fast_mode ? "" : "none";
 }
 
@@ -688,7 +688,7 @@ function renderFlagBadges(flagsObj) {
 }
 
 // ============================================================
-// 📋 材料审核（V4）
+// 材料审核（V4）
 // ============================================================
 async function loadMaterialReview() {
   const summary = document.getElementById("mr-summary");
@@ -767,7 +767,7 @@ function renderMrDuplicates(dup) {
           <span class="text-muted">↔</span>
           <a href="#/tasks/${p.other_task_id}" class="text-blue">任务 #${p.other_task_id} ${esc(p.other_task_name)}</a>
         </div>
-        <div class="text-xs text-muted" style="margin-top:4px">⚠️ 疑似跨单位共享材料或抄送</div>
+        <div class="text-xs text-muted" style="margin-top:4px">疑似跨单位共享材料或抄送</div>
       </div>
     `).join("");
   }
@@ -855,7 +855,7 @@ function renderMrMatching(matching, bindSources) {
   if (m.low_match_materials.length) {
     lowMatchHtml = `
       <div style="margin-top:12px">
-        <div class="text-sm" style="font-weight:600;margin-bottom:6px;color:#d97706">⚠️ 匹配度低的材料（${m.low_match_materials.length}）：</div>
+        <div class="text-sm" style="font-weight:600;margin-bottom:6px;color:#d97706">匹配度低的材料（${m.low_match_materials.length}）：</div>
         ${m.low_match_materials.map(x => `
           <div class="text-sm" style="padding:4px 0">
             <span class="code-id">#${pad(x.material_id)}</span> ${esc(x.file_name)}
@@ -1095,7 +1095,7 @@ function renderWorksheetActions(ws) {
     acts.push(`<button class="btn btn-primary btn-sm" id="ws-download-btn"><span data-icon="download"></span><span>下载 Excel</span></button>`);
     acts.push(`<button class="btn btn-success btn-sm" onclick="finalizeWorksheet()"><span data-icon="check"></span><span>完成复核，定稿</span></button>`);
   } else {
-    acts.push(`<span style="color:#1f7a3e;font-size:13px;font-weight:600">🔒 已定稿（只读）</span>`);
+    acts.push(`<span style="color:#1f7a3e;font-size:13px;font-weight:600">已定稿（只读）</span>`);
     acts.push(`<button class="btn btn-primary btn-sm" id="ws-download-btn"><span data-icon="download"></span><span>下载 Excel</span></button>`);
     if (State.user && State.user.role === "super_admin") {
       acts.push(`<button class="btn btn-danger-ghost btn-sm" onclick="unlockWorksheet()">解锁底稿</button>`);
@@ -1558,7 +1558,7 @@ document.getElementById("tw-run-btn").addEventListener("click", async () => {
   }
   let url = `/tasks/${State.taskId}/run`;
   if (["ai_done", "reviewing", "finalized", "archived"].includes(status)) {
-    if (!confirm("⚠️ 重新核查将清空已有疑点和工作底稿。\n\n确定继续吗？")) return;
+    if (!confirm("重新核查将清空已有疑点和工作底稿。\n\n确定继续吗？")) return;
     url += "?force=true";
   }
   toast("AI 核查中…快速模式约 5 分钟、精确模式 10-15 分钟");
@@ -2867,7 +2867,7 @@ function openImportPreview(kind, file, resp) {
   else if (note.includes("LLM 抽取")) kind_color = "info";
   else if (note.includes("正则启发式")) kind_color = "warn";
   document.getElementById("ipm-note").innerHTML = note
-    ? `<div class="callout callout-${kind_color}">📋 ${esc(note)}</div>`
+    ? `<div class="callout callout-${kind_color}">${esc(note)}</div>`
     : "";
 
   const cols = IMPORT_COLUMNS[kind];
