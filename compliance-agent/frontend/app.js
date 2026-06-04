@@ -1668,7 +1668,7 @@ async function loadRegulations() {
         <td>
           <div class="flex gap-2" style="justify-content:flex-end">
             <button class="btn btn-ghost btn-sm" onclick="previewRegulation(${r.id})" title="预览">${icon("view")}</button>
-            <a href="${API}/regulations/${r.id}/download" target="_blank" class="btn btn-ghost btn-sm" title="下载">${icon("download")}</a>
+            <button class="btn btn-ghost btn-sm" onclick="downloadRegulation(${r.id})" title="下载">${icon("download")}</button>
             ${isAdmin ? `<button class="btn btn-danger-ghost btn-sm" onclick="deleteRegulation(${r.id}, '${esc(r.title)}')" title="删除">${icon("delete")}</button>` : ''}
           </div>
         </td>
@@ -1691,6 +1691,42 @@ function docTypeBadge(t) {
   const cls = (map[t] || ['badge badge-gray'])[0];
   return `<span class="${cls}">${esc(t)}</span>`;
 }
+
+window.downloadRegulation = async function(id) {
+  const tok = getToken();
+  if (!tok) { toast("请先登录", "error"); return; }
+  try {
+    toast("正在下载…");
+    const r = await fetch(`${API}/regulations/${id}/download`, {
+      headers: { Authorization: "Bearer " + tok },
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(text || `HTTP ${r.status}`);
+    }
+    const blob = await r.blob();
+    // 从 Content-Disposition 解析文件名（含 RFC 5987 中文）
+    const cd = r.headers.get("Content-Disposition") || "";
+    let fname = `regulation_${id}`;
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    if (m) fname = decodeURIComponent(m[1]);
+    else {
+      const m2 = cd.match(/filename="?([^";]+)"?/);
+      if (m2) fname = m2[1];
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("✓ 下载完成", "success");
+  } catch (e) {
+    toast("下载失败：" + (e.message || e), "error");
+  }
+};
 
 window.previewRegulation = async function(id) {
   toast("加载法规内容…");
@@ -1731,7 +1767,10 @@ window.previewRegulation = async function(id) {
         </div>`).join("")
       : `<div class="empty-state">该法规未生成条款分块</div>`;
 
-    document.getElementById("rp-download").href = `${API}/regulations/${id}/download`;
+    const rpDl = document.getElementById("rp-download");
+    rpDl.removeAttribute("href");
+    rpDl.style.cursor = "pointer";
+    rpDl.onclick = (ev) => { ev.preventDefault(); downloadRegulation(id); };
 
     // 默认显示全文 tab
     document.querySelectorAll("[data-rptab]").forEach(b => {
