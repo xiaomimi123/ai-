@@ -74,30 +74,75 @@ def check_authenticity(material: Material, ke: KeyElements,
     return findings
 
 
+# V3.1：制度类材料关键词 — 这类一次印发长期有效，沿用旧年份合理
+INSTITUTIONAL_KEYWORDS = (
+    "制度", "办法", "规则", "章程", "细则", "规定", "条例",
+    "管理办法", "工作规则", "议事规则", "实施意见",
+)
+
+
+def _is_institutional_material(material: Material) -> bool:
+    """文件名含制度类关键词 → 视为"一次印发、长期有效"的制度文件。"""
+    name = (material.file_name or "")
+    return any(kw in name for kw in INSTITUTIONAL_KEYWORDS)
+
+
 def check_year_consistency(material: Material, ke: KeyElements,
                            eval_year: int) -> List[RuleFinding]:
-    """V3：未检出日期改为低风险（只是无法验证年度）；明确不是评价年度才高风险。"""
+    """V3.1：按材料类型分级判定年度一致性。
+
+    - 制度/办法/规则类（一次印发长期有效）：沿用旧年份合理，仅未来日期算造假
+    - 执行类（会议纪要/记录/年度报告等）：必须当年度，旧年份低风险提示，
+      未来日期高风险
+    """
     ft = (material.file_type or "").lower()
     if ft in ("txt", "md"):
-        return []  # 纯文本完全跳过
+        return []  # 纯文本跳过格式性检查
+
+    # 没识别到日期：低风险提示
     if ke.issue_year is None:
         return [RuleFinding(
-            finding_type="真实性问题",   # 归一为真实性
-            severity="低",                # 无法判定 ≠ 不合规，仅低风险提示
-            description=f"材料《{material.file_name}》未检出日期，无法验证是否为 {eval_year} 年度材料。",
+            finding_type="真实性问题",
+            severity="低",
+            description=f"材料《{material.file_name}》未检出日期，无法验证年度归属。",
             evidence_location="全文",
             suggestion=f"在落款处补充明确的年月日，以确认 {eval_year} 年度归属。",
         )]
-    if ke.issue_year != eval_year:
+
+    # 未来日期：所有材料都高风险（穿越材料 = 造假）
+    if ke.issue_year > eval_year:
         return [RuleFinding(
             finding_type="真实性问题",
-            severity="高",                # 错误年度 = 高风险
+            severity="高",
             description=f"材料《{material.file_name}》日期为 {ke.issue_year} 年，"
-                        f"非评价对应年度 {eval_year} 年。",
+                        f"晚于评价年度 {eval_year} 年，疑似伪造。",
             evidence_location=ke.issue_date or "全文",
-            suggestion=f"替换为 {eval_year} 年度对应材料。",
+            suggestion="核实材料真实印发日期，提供正确年份的版本。",
         )]
-    return []
+
+    # 当年印发：完全没问题
+    if ke.issue_year == eval_year:
+        return []
+
+    # 旧年份印发（issue_year < eval_year）—— 按材料类型分级
+    if _is_institutional_material(material):
+        # 制度类：沿用旧制度合理，不报问题
+        return []
+
+    # 执行类材料用旧年份 → 低风险提示（不是高风险造假）
+    return [RuleFinding(
+        finding_type="真实性问题",
+        severity="低",
+        description=(
+            f"材料《{material.file_name}》日期为 {ke.issue_year} 年，"
+            f"早于评价年度 {eval_year} 年。如属年度执行类材料请核实是否替换为 {eval_year} 年版本。"
+        ),
+        evidence_location=ke.issue_date or "全文",
+        suggestion=(
+            f"若是会议纪要 / 记录 / 报告等年度产生材料，应替换为 {eval_year} 年度对应版本；"
+            f"若是制度沿用，确认仍现行有效即可。"
+        ),
+    )]
 
 
 def check_required_elements(material: Material, ke: KeyElements) -> List[RuleFinding]:
