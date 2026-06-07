@@ -35,14 +35,91 @@ WHITE = Font(color="FFFFFFFF", bold=True)
 THIN = Side(style="thin", color="FFBFBFBF")
 ALL_BORDERS = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
-# 新底稿模板列顺序（V3 标准）
+# 新底稿模板列顺序（V3.1 标准）
+# 第 10 列从"调整得分说明"改为"签章年度文号"：自动从材料 key_elements 抽取
 HEADERS = [
     "序号", "指标分类", "指标名称",
     "核查要点", "扣分规则", "佐证材料核查结果",
     "标准分值", "核查前得分", "核查后得分",
-    "调整得分说明",
+    "签章年度文号",
 ]
-COL_WIDTHS = [6, 16, 22, 50, 50, 38, 10, 12, 12, 36]
+COL_WIDTHS = [6, 16, 22, 50, 50, 38, 10, 12, 12, 32]
+
+
+def _decide_issue_count(materials_count: int) -> int:
+    """按本任务佐证材料份数决定"发现主要问题"取多少条。
+
+    - < 20 份  → 3 条
+    - 20-29 份 → 5 条
+    - >= 30 份 → 8 条
+    """
+    if materials_count < 20:
+        return 3
+    if materials_count < 30:
+        return 5
+    return 8
+
+
+def _collect_top_issues(db: Session, task: AuditTask, count: int) -> List[str]:
+    """筛该任务下高风险（severity="高"）+ 非 ignored 的 Finding，取前 count 条。
+
+    返回每条形如：「【I-13 预算制度建立】材料《X》未检出公章...」
+    """
+    from app.models import Finding, Indicator as _Ind
+
+    findings = (
+        db.query(Finding)
+        .filter(Finding.task_id == task.id)
+        .filter(Finding.severity == "高")
+        .filter(Finding.review_status != "ignored")
+        .all()
+    )
+    # 按维度排序（真实性 / 完整性 / 合规性 / 重复性 / 匹配性），同维度按创建时间
+    dim_order = {
+        "真实性问题": 0, "完整性问题": 1, "合规性问题": 2,
+        "重复性问题": 3, "匹配性问题": 4,
+    }
+    findings.sort(key=lambda f: (
+        dim_order.get(f.finding_type or "", 9),
+        f.id or 0,
+    ))
+
+    # 取指标信息（一次性查）
+    ind_ids = {f.indicator_id for f in findings if f.indicator_id}
+    inds = {i.id: i for i in db.query(_Ind).filter(_Ind.id.in_(ind_ids)).all()} if ind_ids else {}
+
+    out: List[str] = []
+    for f in findings[:count]:
+        ind = inds.get(f.indicator_id) if f.indicator_id else None
+        prefix = f"【{ind.indicator_code} {ind.name}】" if ind else ""
+        desc = (f.description or "").strip()
+        out.append(f"{prefix}{desc}")
+    return out
+
+
+def _format_signature_year_docno(materials_for_indicator: list) -> str:
+    """汇总该指标下绑定材料的关键要素（公章/签字/年度/文号），每份材料一行。
+
+    输出形如：
+        公章✓ 签字✓ 2025 · 川师校〔2025〕86 号
+        公章✗ 签字✗ 未识别 · 无文号
+
+    如果该指标无绑定材料，返回空字符串。
+    """
+    import json as _json
+    lines: List[str] = []
+    for m in materials_for_indicator:
+        try:
+            ke = _json.loads(m.key_elements or "{}")
+        except Exception:
+            ke = {}
+        seal = "公章✓" if ke.get("has_official_seal") else "公章✗"
+        sig  = "签字✓" if ke.get("has_signature") else "签字✗"
+        year = str(ke.get("issue_year")) if ke.get("issue_year") else "未识别"
+        docno = (ke.get("document_number") or "").strip()
+        docno_part = docno if docno else "无文号"
+        lines.append(f"{seal} {sig} {year} · {docno_part}")
+    return "\n".join(lines)
 
 
 def _format_flag_cell(flags: dict) -> str:
@@ -98,6 +175,12 @@ def build_worksheet_xlsx(db: Session, task: AuditTask, worksheet: Worksheet) -> 
     rows: List[WorksheetRow] = sorted(worksheet.rows, key=lambda r: r.serial)
     ind_by_id = {ind.id: ind for ind in db.query(Indicator).all()}
 
+    # 该任务的所有材料按 indicator_id 分桶（用于"签章年度文号"列）
+    materials_by_ind: dict = {}
+    for m in task.materials:
+        if m.indicator_id:
+            materials_by_ind.setdefault(m.indicator_id, []).append(m)
+
     cur_r = 3
     total_max = 0.0
     total_before = 0.0
@@ -122,6 +205,10 @@ def build_worksheet_xlsx(db: Session, task: AuditTask, worksheet: Worksheet) -> 
         except Exception:
             flags = {}
 
+        # 第 10 列：签章年度文号 — 从绑定材料的 key_elements 汇总
+        ind_materials = materials_by_ind.get(ind.id, [])
+        signature_cell = _format_signature_year_docno(ind_materials)
+
         row_vals = [
             wrow.serial,
             cat_text,
@@ -132,7 +219,7 @@ def build_worksheet_xlsx(db: Session, task: AuditTask, worksheet: Worksheet) -> 
             float(ind.max_score or 0),
             float(wrow.original_score or 0),
             float(wrow.audited_score or 0),
-            wrow.adjustment_note or "",
+            signature_cell,
         ]
         _set_row(ws, cur_r, row_vals)
         ws.row_dimensions[cur_r].height = 95
@@ -195,6 +282,36 @@ def build_worksheet_xlsx(db: Session, task: AuditTask, worksheet: Worksheet) -> 
     _label_row("被核查单位组织机构代码", worksheet.unit_code)
     _label_row("核查人员签名", worksheet.auditor_name)
     _label_row("复核人签名", worksheet.reviewer_name)
+
+    # ============================================================
+    # 发现主要问题汇总（V3.2 新增）
+    # 数量按材料数决定：< 20 → 3 条，20-29 → 5 条，>= 30 → 8 条
+    # ============================================================
+    materials_count = len(task.materials)
+    issue_count = _decide_issue_count(materials_count)
+    issues = _collect_top_issues(db, task, issue_count)
+    if issues:
+        issues_text = "\n".join(f"{i}. {desc}" for i, desc in enumerate(issues, start=1))
+    else:
+        issues_text = "（暂未检出高风险问题）"
+
+    # 该行 label 占 A:C，value 占 D:J；行高自适应（按内容估算）
+    ws.cell(row=cur_r, column=1, value="发现主要问题汇总")
+    ws.merge_cells(start_row=cur_r, end_row=cur_r, start_column=1, end_column=3)
+    ws.merge_cells(start_row=cur_r, end_row=cur_r, start_column=4, end_column=10)
+    label_cell = ws.cell(row=cur_r, column=1)
+    label_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    label_cell.font = Font(bold=True)
+    label_cell.border = ALL_BORDERS
+    label_cell.fill = SUBTOTAL_FILL
+    value_cell = ws.cell(row=cur_r, column=4, value=issues_text)
+    value_cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    value_cell.font = Font(size=10)
+    value_cell.border = ALL_BORDERS
+    # 行高按问题数估算（每条约 28pt）
+    n_lines = max(1, len(issues))
+    ws.row_dimensions[cur_r].height = max(48, n_lines * 32)
+    cur_r += 1
 
     # 输出
     buf = BytesIO()

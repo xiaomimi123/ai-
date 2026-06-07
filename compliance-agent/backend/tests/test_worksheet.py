@@ -74,8 +74,8 @@ def test_worksheet_xlsx_export_shape(client, auth_headers):
     assert ws.cell(2, 9).value == "核查后得分"
     # 佐证材料核查结果在第 6 列
     assert ws.cell(2, 6).value == "佐证材料核查结果"
-    # 调整得分说明在第 10 列
-    assert ws.cell(2, 10).value == "调整得分说明"
+    # 签章年度文号在第 10 列（V3.1 改名）
+    assert ws.cell(2, 10).value == "签章年度文号"
 
     total_row = next(
         (r for r in range(3, ws.max_row + 1) if ws.cell(r, 1).value == "合计"),

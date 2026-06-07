@@ -30,7 +30,7 @@ def _setup_task(client, name):
 
 
 def test_excel_columns_v3_order(client):
-    """导出 Excel 的列顺序应为 V3 新版（核查要点提前，调整得分说明在末）。"""
+    """导出 Excel 的列顺序应为 V3.1（第 10 列从"调整得分说明"改为"签章年度文号"）。"""
     task_id = _setup_task(client, "V3-EXCEL-1")
     r = client.get(f"/api/tasks/{task_id}/worksheet.xlsx")
     assert r.status_code == 200
@@ -39,9 +39,55 @@ def test_excel_columns_v3_order(client):
     expected = ["序号", "指标分类", "指标名称",
                 "核查要点", "扣分规则", "佐证材料核查结果",
                 "标准分值", "核查前得分", "核查后得分",
-                "调整得分说明"]
+                "签章年度文号"]
     actual = [ws.cell(2, c).value for c in range(1, 11)]
     assert actual == expected, actual
+
+
+def test_signature_year_docno_format():
+    """KE 汇总 helper：公章/签字/年度/文号 每份材料一行。"""
+    from app.services.worksheet_export import _format_signature_year_docno
+
+    class _M:
+        def __init__(self, ke_dict):
+            self.key_elements = __import__("json").dumps(ke_dict)
+
+    materials = [
+        _M({"has_official_seal": True, "has_signature": True,
+            "issue_year": 2025, "document_number": "川师校〔2025〕86 号"}),
+        _M({"has_official_seal": False, "has_signature": False,
+            "issue_year": None, "document_number": ""}),
+    ]
+    out = _format_signature_year_docno(materials)
+    lines = out.split("\n")
+    assert len(lines) == 2
+    assert "公章✓" in lines[0] and "签字✓" in lines[0]
+    assert "2025" in lines[0] and "川师校〔2025〕86 号" in lines[0]
+    assert "公章✗" in lines[1] and "签字✗" in lines[1]
+    assert "未识别" in lines[1] and "无文号" in lines[1]
+
+
+def test_signature_column_in_xlsx(client):
+    """Excel 第 10 列应是 KE 汇总（非空，且包含至少一份材料的标记）。"""
+    task_id, inds = _setup_task(client, "V3-SIG-COL"), None
+    # _setup_task 不返回 inds，重新取
+    inds = client.get("/api/indicators").json()
+    target_iid = inds[0]["id"]
+    # 上传时绑定到选定指标，确保 Excel 渲染时该指标行有材料
+    client.post(f"/api/tasks/{task_id}/materials",
+                files={"file": ("a.txt", b"hello", "text/plain")},
+                data={"indicator_id": str(target_iid)})
+    client.post(f"/api/tasks/{task_id}/run")
+
+    r = client.get(f"/api/tasks/{task_id}/worksheet.xlsx")
+    assert r.status_code == 200
+    wb = load_workbook(BytesIO(r.content))
+    ws = wb.worksheets[0]
+    # 第 3 行（首条指标）第 10 列
+    cell_value = ws.cell(3, 10).value or ""
+    # txt 文件 KE 抽取大概率公章/签字都为 False
+    assert "公章" in cell_value, f"应含公章标识，实际: {cell_value!r}"
+    assert "签字" in cell_value, f"应含签字标识，实际: {cell_value!r}"
 
 
 def test_patch_adjustment_note(client):

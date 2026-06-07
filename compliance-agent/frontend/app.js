@@ -906,6 +906,29 @@ function renderMrTimeline(events) {
   `).join("");
 }
 
+// V3.1：从该指标下绑定材料的 key_elements 汇总「签章年度文号」
+// 每份材料一行：公章✓ 签字✗ 2025 · 川师校〔2025〕86 号
+function formatSignatureYearDocno(indicatorId) {
+  if (!indicatorId || !State.taskDetail?.materials) return "";
+  const mats = State.taskDetail.materials.filter(m => m.indicator_id === indicatorId);
+  if (!mats.length) return `<span class="text-muted">未绑定材料</span>`;
+  const lines = mats.map(m => {
+    let ke = {};
+    try { ke = JSON.parse(m.key_elements || "{}"); } catch {}
+    const seal = ke.has_official_seal
+      ? `<span style="color:#1f7a3e">公章✓</span>`
+      : `<span style="color:#b8262b">公章✗</span>`;
+    const sig = ke.has_signature
+      ? `<span style="color:#1f7a3e">签字✓</span>`
+      : `<span style="color:#b8262b">签字✗</span>`;
+    const year = ke.issue_year ? String(ke.issue_year) : `<span style="color:#888">未识别</span>`;
+    const docno = (ke.document_number || "").trim();
+    const docPart = docno ? escapeHtml(docno) : `<span style="color:#888">无文号</span>`;
+    return `${seal} ${sig} ${year} · ${docPart}`;
+  });
+  return lines.join("<br/>");
+}
+
 async function loadWorksheet() {
   const body = document.getElementById("ws-tbody");
   body.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding:24px">加载底稿中…</td></tr>`;
@@ -938,17 +961,15 @@ async function loadWorksheet() {
     const cat = ind.subcategory ? `${ind.category}<br/><span class="text-xs text-muted">${ind.subcategory}</span>` : (ind.category || "");
     const max = +ind.max_score || 0;
 
-    // 可编辑：得分 number input；调整说明 textarea
+    // 可编辑：得分 number input
     const scoreInput = isLocked
       ? `<strong>${(r.audited_score ?? 0).toFixed(2)}</strong>`
       : `<input type="number" min="0" max="${max}" step="0.25" value="${(r.audited_score ?? 0).toFixed(2)}"
             class="ws-cell-edit ws-score" data-row-id="${r.id}" data-max="${max}"
             style="width:56px;text-align:center;padding:4px;font-weight:600" />`;
-    const adjustNote = isLocked
-      ? `<div class="ws-cell-readonly">${escapeHtml(r.adjustment_note || "")}</div>`
-      : `<textarea class="ws-cell-edit ws-adjust" data-row-id="${r.id}"
-            rows="3" placeholder="调整得分时填写（默认 AI 评分无需说明）"
-            style="width:100%;min-width:200px;padding:6px;font-size:12px;resize:vertical">${escapeHtml(r.adjustment_note || "")}</textarea>`;
+
+    // 第 10 列「签章年度文号」：只读，从该指标绑定的材料 key_elements 汇总
+    const signatureCell = formatSignatureYearDocno(r.indicator_id);
 
     // 核查要点 / 扣分规则 = 指标定义，只读
     const audit_points = ind.audit_points || "";
@@ -965,7 +986,7 @@ async function loadWorksheet() {
         <td class="text-center">${ind.max_score ?? ""}</td>
         <td class="text-center">${(r.original_score ?? 0).toFixed(2)}</td>
         <td class="text-center">${scoreInput}</td>
-        <td class="text-sm">${adjustNote}</td>
+        <td class="text-xs ws-cell-readonly" style="white-space:pre-wrap;line-height:1.5">${signatureCell}</td>
       </tr>
     `;
   }).join("");
@@ -1040,9 +1061,8 @@ function bindWorksheetCellEditors(locked) {
         await saveWorksheetRow(rowId, { audited_score: v });
       } else if (el.classList.contains("ws-note")) {
         await saveWorksheetRow(rowId, { audit_finding_text: el.value });
-      } else if (el.classList.contains("ws-adjust")) {
-        await saveWorksheetRow(rowId, { adjustment_note: el.value });
       }
+      // ws-adjust 在 V3.1 已移除（该列改为只读"签章年度文号"自动展示）
     });
   });
 }
