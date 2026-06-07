@@ -34,6 +34,7 @@ from app.tasks import run_audit_task
 units_router = APIRouter(prefix="/api/units", tags=["audit:units"])
 tasks_router = APIRouter(prefix="/api/tasks", tags=["audit:tasks"])
 findings_router = APIRouter(prefix="/api/findings", tags=["audit:findings"])
+materials_router = APIRouter(prefix="/api/materials", tags=["audit:materials"])
 
 
 # ============================================================
@@ -614,3 +615,89 @@ def resolve_rectification(finding_id: int, req: FindingRectifyConfirmRequest,
                           db: Session = Depends(get_db),
                           user: User = Depends(require_auditor)):
     return audit_service.resolve_rectification(db, finding_id, req.note, user)
+
+
+# ============================================================
+# 材料预览 / 下载（用于点击核查发现里的"材料出处"打开原文件）
+# ============================================================
+_INLINE_MIME = {
+    "pdf":  "application/pdf",
+    "png":  "image/png",
+    "jpg":  "image/jpeg", "jpeg": "image/jpeg",
+    "gif":  "image/gif",
+    "webp": "image/webp",
+    "svg":  "image/svg+xml",
+    "txt":  "text/plain; charset=utf-8",
+    "md":   "text/markdown; charset=utf-8",
+}
+_OFFICE_MIME = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "doc":  "application/msword",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xls":  "application/vnd.ms-excel",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "ppt":  "application/vnd.ms-powerpoint",
+}
+
+
+@materials_router.get("/{material_id}/preview")
+def preview_material(material_id: int,
+                     db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """打开 / 下载材料原文件。
+
+    - PDF / 图片 / 纯文本 → Content-Disposition: inline（浏览器内联预览）
+    - docx / xlsx 等办公文件 → attachment（强制下载，由本地 Office 打开）
+    - 其它未知格式 → attachment 兜底
+    """
+    from pathlib import Path
+    material = db.get(Material, material_id)
+    if not material:
+        raise HTTPException(404, "材料不存在")
+    task = db.get(AuditTask, material.task_id)
+    if not task or not _user_can_see_task(user, task):
+        raise HTTPException(403, "无权查看此材料")
+
+    path = Path(material.storage_path or "")
+    if not path.exists():
+        raise HTTPException(404, "材料文件已丢失")
+
+    ext = (material.file_type or path.suffix.lstrip(".") or "").lower()
+    if ext in _INLINE_MIME:
+        media_type = _INLINE_MIME[ext]
+        disposition = "inline"
+    elif ext in _OFFICE_MIME:
+        media_type = _OFFICE_MIME[ext]
+        disposition = "attachment"
+    else:
+        media_type = "application/octet-stream"
+        disposition = "attachment"
+
+    from urllib.parse import quote
+    fname = material.file_name or path.name
+    # 文件名只取最后一段（去掉路径前缀）
+    short_name = Path(fname).name
+    quoted = quote(short_name)
+    # HTTP header 必须 latin-1；中文文件名只能放 filename*=UTF-8''
+    # 给一个 ASCII fallback（材料编号）
+    ascii_fallback = f"material_{material.id}{path.suffix}"
+
+    def _stream():
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+    return StreamingResponse(
+        _stream(),
+        media_type=media_type,
+        headers={
+            "Content-Disposition":
+                f'{disposition}; filename="{ascii_fallback}"; '
+                f"filename*=UTF-8''{quoted}",
+            "Content-Length": str(path.stat().st_size),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

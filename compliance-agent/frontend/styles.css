@@ -1170,6 +1170,17 @@ button { font-family: inherit; }
 .text-xs { font-size: 11px; }
 .text-muted { color: var(--text-secondary); }
 
+/* 核查发现 / 底稿等处的"材料出处"可点击链接 */
+.material-link {
+  color: var(--blue, #0071e3);
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px dashed currentColor;
+  word-break: break-all;
+}
+.material-link:hover { text-decoration: underline; border-bottom-style: solid; }
+.text-blue { color: var(--blue, #0071e3); }
+
 /* 材料 → 指标 绑定选择器：未绑定时高亮 */
 .tw-bind-select { font-size: 12px; padding: 4px 6px; }
 .tw-bind-unset {

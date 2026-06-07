@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.audit_routes import findings_router, tasks_router, units_router
+from app.api.audit_routes import findings_router, materials_router, tasks_router, units_router
 from app.api.auth_routes import audit_router, auth_router, users_router
 from app.api.knowledge_routes import checkitems_router, indicators_router
 from app.api.regulation_routes import regulations_router
@@ -38,6 +38,7 @@ app.include_router(regulations_router)
 app.include_router(units_router)
 app.include_router(tasks_router)
 app.include_router(findings_router)
+app.include_router(materials_router)
 
 
 @app.on_event("startup")

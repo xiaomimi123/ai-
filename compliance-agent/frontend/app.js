@@ -1727,9 +1727,16 @@ function renderFindingDetail(f) {
       <dt>评价指标</dt>
       <dd>${indicator ? `<span class="code-id">${esc(indicator.indicator_code)}</span> ${esc(indicator.name)}` : '<span class="text-muted">—</span>'}</dd>
       <dt>材料出处</dt>
-      <dd>${material ? esc(material.file_name) : '<span class="text-muted">—</span>'}</dd>
+      <dd>${material
+            ? `<a href="javascript:void(0)" class="material-link"
+                  onclick="openMaterial(${material.id})"
+                  title="点击查看原文件">${esc(material.file_name)}</a>`
+            : '<span class="text-muted">—</span>'}</dd>
       <dt>具体位置</dt>
-      <dd>${esc(f.evidence_location || '—')}</dd>
+      <dd>${esc(f.evidence_location || '—')}${
+            material && f.evidence_location && f.evidence_location !== '—' && f.evidence_location !== '全文'
+              ? ` <span class="text-xs text-muted">（打开文件后按 Ctrl+F 搜索关键词定位）</span>`
+              : ''}</dd>
       <dt>复核状态</dt>
       <dd>${reviewBadge(f.review_status)}${f.review_note ? ' · <span class="text-muted">' + esc(f.review_note) + '</span>' : ''}</dd>
       <dt>整改状态</dt>
@@ -1911,6 +1918,56 @@ function docTypeBadge(t) {
   const cls = (map[t] || ['badge badge-gray'])[0];
   return `<span class="${cls}">${esc(t)}</span>`;
 }
+
+// 打开核查发现/底稿/材料审核中提到的材料原文件
+// PDF/图片/文本 → 新标签页内联预览；docx/xlsx → 下载到本地
+window.openMaterial = async function(materialId) {
+  const tok = getToken();
+  if (!tok) { toast("请先登录", "error"); return; }
+  try {
+    toast("正在加载材料…");
+    const r = await fetch(`${API}/materials/${materialId}/preview`, {
+      headers: { Authorization: "Bearer " + tok },
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(text || `HTTP ${r.status}`);
+    }
+    const blob = await r.blob();
+    // 根据 Content-Disposition 判断该 inline 还是 attachment
+    const cd = r.headers.get("Content-Disposition") || "";
+    const isInline = cd.toLowerCase().startsWith("inline");
+    const ctype = r.headers.get("Content-Type") || "";
+
+    const url = URL.createObjectURL(blob);
+    if (isInline) {
+      // 新标签打开预览（PDF / 图片 / 文本）
+      const w = window.open(url, "_blank");
+      if (!w) toast("浏览器拦截了新标签，请允许弹窗", "warn");
+      else toast("已在新标签打开");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } else {
+      // 下载（Office 文件）
+      let fname = `material_${materialId}`;
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+      if (m) fname = decodeURIComponent(m[1]);
+      else {
+        const m2 = cd.match(/filename="?([^";]+)"?/);
+        if (m2) fname = m2[1];
+      }
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast("已下载，请用本地 Office 打开", "success");
+    }
+  } catch (e) {
+    toast("打开失败：" + (e.message || e), "error");
+  }
+};
 
 window.downloadRegulation = async function(id) {
   const tok = getToken();
