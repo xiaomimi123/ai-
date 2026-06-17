@@ -132,3 +132,47 @@ def test_system_prompt_forbids_skipping():
     assert "必须覆盖所有传入的 material_id" in p
     assert "禁止遗漏" in p
     assert "省略" not in p
+
+
+def test_ai_classify_retries_missing_materials():
+    """LLM 第一次只返回部分映射 → 触发对漏的材料单独补问一次。"""
+    from app.services.ai_material_classifier import ai_classify_materials
+    from app.llm.base import LLMClient
+
+    class FakeMat:
+        def __init__(self, mid):
+            self.id = mid
+            self.file_name = f"f{mid}.pdf"
+            self.parsed_text = "内容"
+
+    class FakeInd:
+        def __init__(self, c):
+            self.indicator_code = c
+            self.id = int(c.split("-")[1])
+            self.subcategory = ""
+            self.category = ""
+            self.name = c
+
+    inds = [FakeInd("I-01"), FakeInd("I-13"), FakeInd("I-55")]
+
+    calls = []
+
+    class FakeLLM(LLMClient):
+        thinking_mode = "off"
+        def complete(self, *a, **k): raise NotImplementedError
+        def extract_json(self, prompt, system=None, max_tokens=4096):
+            calls.append(prompt)
+            # 第一次只返回 1/3 → 漏 2 个 → 应触发补单
+            if len(calls) == 1:
+                return {"mappings": [{"material_id": 1, "indicator_code": "I-01"}]}
+            # 补单：把剩下的也给出来
+            return {"mappings": [
+                {"material_id": 2, "indicator_code": "I-13"},
+                {"material_id": 3, "indicator_code": "I-55"},
+            ]}
+
+    mats = [FakeMat(1), FakeMat(2), FakeMat(3)]
+    result = ai_classify_materials(db=None, task=None, llm=FakeLLM(),
+                                   materials=mats, indicators=inds)
+    assert result == {1: 1, 2: 13, 3: 55}
+    assert len(calls) == 2  # 1 次批量 + 1 次补单

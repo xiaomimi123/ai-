@@ -75,13 +75,17 @@ def ai_classify_materials(db: Session, task: AuditTask,
                           llm: LLMClient,
                           materials: List[Material],
                           indicators: List[Indicator]) -> Dict[int, int]:
-    """让 LLM 阅读材料决定绑定。返回 {material_id: indicator.id}。"""
+    """让 LLM 阅读材料决定绑定。返回 {material_id: indicator.id}。
+
+    v1.1 改动：
+    - 缩小 batch、加大文本预览、加大 max_tokens
+    - 批次返回数量 < batch 数量 → 对漏的材料补问 1 次
+    """
     if isinstance(llm, StubLLMClient):
         return {}
     if not materials:
         return {}
 
-    # 让 LLM 用快速模式（这是分类任务，不需要深度思考）
     if hasattr(llm, "thinking_mode"):
         try:
             llm.thinking_mode = "off"
@@ -89,19 +93,18 @@ def ai_classify_materials(db: Session, task: AuditTask,
             pass
 
     code2id = {ind.indicator_code: ind.id for ind in indicators}
-
     results: Dict[int, int] = {}
-    for i in range(0, len(materials), BATCH_SIZE):
-        batch = materials[i:i + BATCH_SIZE]
-        prompt = _build_prompt(batch, indicators)
-        try:
-            data = llm.extract_json(prompt, system=SYSTEM_PROMPT, max_tokens=4096)
-        except Exception as exc:
-            print(f"[ai_classify] batch {i//BATCH_SIZE + 1} LLM 失败: {exc}")
-            continue
 
+    def _call_once(sub_batch: List[Material]) -> Dict[int, int]:
+        prompt = _build_prompt(sub_batch, indicators)
+        try:
+            data = llm.extract_json(prompt, system=SYSTEM_PROMPT, max_tokens=8192)
+        except Exception as exc:
+            print(f"[ai_classify] LLM 失败: {exc}")
+            return {}
         if not isinstance(data, dict):
-            continue
+            return {}
+        out: Dict[int, int] = {}
         for item in data.get("mappings", []) or []:
             if not isinstance(item, dict):
                 continue
@@ -113,9 +116,19 @@ def ai_classify_materials(db: Session, task: AuditTask,
             iid = code2id.get(code)
             if iid is None:
                 continue
-            # 校验 material_id 确实在当前 batch
-            if not any(m.id == mid for m in batch):
+            if not any(m.id == mid for m in sub_batch):
                 continue
-            results[mid] = iid
+            out[mid] = iid
+        return out
+
+    for i in range(0, len(materials), BATCH_SIZE):
+        batch = materials[i:i + BATCH_SIZE]
+        got = _call_once(batch)
+        results.update(got)
+        missing = [m for m in batch if m.id not in got]
+        if missing:
+            # 漏的材料单独再问 1 次（最多 1 轮重试）
+            retry = _call_once(missing)
+            results.update(retry)
 
     return results
