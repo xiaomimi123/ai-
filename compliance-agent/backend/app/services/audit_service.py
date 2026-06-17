@@ -199,9 +199,11 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
             llm = get_llm_client(db)
             ai_used = not isinstance(llm, StubLLMClient)
             mapping = ai_classify_materials(db, task, llm, still_unbound, indicators)
+            new_still: list[Material] = []
             for m in still_unbound:
                 iid = mapping.get(m.id)
                 if iid is None:
+                    new_still.append(m)
                     continue
                 m.indicator_id = iid
                 ai_bound += 1
@@ -212,20 +214,46 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
                         "indicator_code": ind.indicator_code if ind else "?",
                         "source": "ai",
                     })
+            still_unbound = new_still
         except Exception as exc:
             print(f"[auto_bind] AI 分类失败（仅关键词生效）: {exc}")
 
-    if keyword_bound or ai_bound:
+    # 第 3 阶段：subcategory 兜底（v1.1 新增）—— 保证 still_unbound == 0
+    from app.services.material_matcher import (
+        match_subcategory, fallback_indicator_for_subcategory,
+    )
+    fallback_bound = 0
+    for m in list(still_unbound):
+        signal = (m.file_name or "") + " " + (m.parsed_text or "")[:500]
+        sub = match_subcategory(signal) or "补充指标"
+        ind = fallback_indicator_for_subcategory(sub, indicators)
+        if not ind:
+            continue
+        m.indicator_id = ind.id
+        fallback_bound += 1
+        still_unbound.remove(m)
+        if len(samples) < 15:
+            samples.append({
+                "file": m.file_name[:60],
+                "indicator_code": ind.indicator_code,
+                "source": "fallback",
+            })
+
+    db.flush()
+
+    if keyword_bound or ai_bound or fallback_bound:
         log_action(db, user, "material.auto_bind",
                    target_type="task", target_id=task.id,
-                   detail=f"自动绑定 关键词 {keyword_bound} + AI {ai_bound} / 共 {checked}")
+                   detail=(f"自动绑定 关键词 {keyword_bound} + AI {ai_bound} "
+                           f"+ 兜底 {fallback_bound} / 共 {checked}"))
     db.commit()
     return {
         "checked": checked,
         "keyword_bound": keyword_bound,
         "ai_bound": ai_bound,
-        "bound_now": keyword_bound + ai_bound,        # 兼容旧字段
-        "still_unbound": checked - keyword_bound - ai_bound,
+        "fallback_bound": fallback_bound,
+        "bound_now": keyword_bound + ai_bound + fallback_bound,
+        "still_unbound": len(still_unbound),
         "ai_used": ai_used,
         "samples": samples,
     }
