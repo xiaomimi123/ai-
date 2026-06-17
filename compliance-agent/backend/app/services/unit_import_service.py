@@ -66,3 +66,51 @@ def _parse_units_file(file_bytes: bytes, file_name: str) -> Tuple[list[dict], st
 
     note = f"表头识别：{header[name_idx]}" + (f" / {header[code_idx]}" if code_idx is not None else "")
     return out, note
+
+
+def import_units_from_file(db: Session,
+                           file_bytes: bytes,
+                           file_name: str,
+                           dry_run: bool = False,
+                           user: "User | None" = None) -> dict:
+    """解析 -> 跳过同名 -> 入库。dry_run=True 不写库。"""
+    rows, note = _parse_units_file(file_bytes, file_name)
+    preview = rows[:10]
+    if dry_run:
+        return {
+            "preview": preview,
+            "total": len(rows),
+            "note": note,
+        }
+
+    existing = {n for (n,) in db.query(AuditUnit.name).all()}
+    inserted, skipped = 0, 0
+    errors: list[str] = []
+    for i, row in enumerate(rows, start=2):
+        nm = (row.get("name") or "").strip()
+        if not nm:
+            errors.append(f"第 {i} 行 name 为空")
+            continue
+        if nm in existing:
+            skipped += 1
+            continue
+        db.add(AuditUnit(name=nm, code=row.get("code", "")[:64], level="单位"))
+        existing.add(nm)
+        inserted += 1
+
+    if user is not None:
+        try:
+            log_action(db, user, "unit.batch_import",
+                       target_type="unit", target_id=0,
+                       detail=f"批量导入 总{len(rows)} 入{inserted} 跳{skipped} 错{len(errors)}")
+        except Exception:
+            pass
+    db.commit()
+    return {
+        "preview": preview,
+        "total": len(rows),
+        "inserted": inserted,
+        "skipped": skipped,
+        "errors": errors[:20],
+        "note": note,
+    }

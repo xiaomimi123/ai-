@@ -52,3 +52,44 @@ def test_parse_units_invalid_header_raises():
     import pytest
     with pytest.raises(ValueError):
         _parse_units_file(raw, "u.xlsx")
+
+
+def test_import_units_inserts_new(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/d.db")
+    from app.models import init_db, AuditUnit, SessionLocal
+    init_db()
+    raw = _make_xlsx([
+        ["代码", "单位名称"],
+        ["X1", "已存在单位"],
+        ["X2", "新单位 A"],
+        ["X3", "新单位 B"],
+    ])
+    with SessionLocal() as db:
+        db.add(AuditUnit(name="已存在单位", code="OLD"))
+        db.commit()
+        from app.services.unit_import_service import import_units_from_file
+        result = import_units_from_file(db, raw, "u.xlsx")
+        assert result["total"] == 3
+        assert result["inserted"] == 2
+        assert result["skipped"] == 1
+        names = {u.name for u in db.query(AuditUnit).all()}
+        assert {"已存在单位", "新单位 A", "新单位 B"} <= names
+        # 跳过的不被改 code
+        assert db.query(AuditUnit).filter_by(name="已存在单位").first().code == "OLD"
+
+
+def test_import_units_dry_run_does_not_write(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/d.db")
+    from app.models import init_db, AuditUnit, SessionLocal
+    init_db()
+    raw = _make_xlsx([
+        ["代码", "单位名称"],
+        ["X9", "干跑单位"],
+    ])
+    with SessionLocal() as db:
+        from app.services.unit_import_service import import_units_from_file
+        result = import_units_from_file(db, raw, "u.xlsx", dry_run=True)
+        assert result["total"] == 1
+        assert result["preview"][0]["name"] == "干跑单位"
+        # 库里没真写
+        assert db.query(AuditUnit).filter_by(name="干跑单位").first() is None
