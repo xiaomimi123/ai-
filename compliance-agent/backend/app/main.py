@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -20,6 +21,10 @@ from app.core.config import settings
 from app.models import init_db
 
 app = FastAPI(title=settings.app_name, version="3.0.0")
+
+# gzip 压缩：app.js 130KB → ~25KB，HTML/JSON 也压。
+# minimum_size 阈值用默认 500 字节，避免小响应反而变慢。
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(
     CORSMiddleware,
