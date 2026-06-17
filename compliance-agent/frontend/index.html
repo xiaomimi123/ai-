@@ -786,9 +786,18 @@
             <!-- 单位 -->
             <div id="console-units" class="console-panel hidden">
               <div class="console-section">
-                <div class="console-section-head">
-                  <h2 class="console-section-title">被检查单位</h2>
-                  <p class="console-section-desc">维护本平台受理的被检查单位档案。</p>
+                <div class="console-section-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+                  <div>
+                    <h2 class="console-section-title">被检查单位</h2>
+                    <p class="console-section-desc">维护本平台受理的被检查单位档案。</p>
+                  </div>
+                  <div class="action-bar">
+                    <label class="btn btn-secondary" title="支持 Excel/CSV，表头需含「名称/单位名称/机构名称」与「代码/编号」">
+                      <span data-icon="upload"></span>
+                      <span>批量导入（Excel / CSV）</span>
+                      <input type="file" id="import-units" accept=".xlsx,.xls,.csv" hidden />
+                    </label>
+                  </div>
                 </div>
 
                 <form id="unit-form" class="grid-3 mb-5">

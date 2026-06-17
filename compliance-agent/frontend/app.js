@@ -3340,6 +3340,33 @@ window.deleteUnit = async function(unitId, name) {
   }
 };
 
+// 单位批量导入（v1.1）：Excel/CSV → POST /units/import-from-file
+document.getElementById("import-units").addEventListener("change", async ev => {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  const fd = new FormData(); fd.append("file", f);
+  try {
+    const r = await fetch(API + "/units/import-from-file", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + getToken() },
+      body: fd,
+    });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+    const errs = (body.errors || []).length;
+    toast(
+      `✓ 单位批量导入：总 ${body.total} · 入库 ${body.inserted} · 跳过 ${body.skipped}` +
+      (errs ? ` · 错误 ${errs}` : ""),
+      "success",
+    );
+    await loadUnitsConsole();
+  } catch (e) {
+    toast(`✗ ${e.message}`, "error");
+  } finally {
+    ev.target.value = "";  // 允许相同文件再次选择
+  }
+});
+
 document.getElementById("unit-form").addEventListener("submit", async ev => {
   ev.preventDefault();
   const fd = new FormData(ev.target);
