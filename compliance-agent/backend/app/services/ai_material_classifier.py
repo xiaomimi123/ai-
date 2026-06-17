@@ -34,6 +34,7 @@ SYSTEM_PROMPT = (
 
 BATCH_SIZE = 10
 TEXT_PREVIEW = 1500
+MAX_TOKENS = 8192
 
 
 def _format_indicator_list(indicators: List[Indicator]) -> str:
@@ -98,7 +99,7 @@ def ai_classify_materials(db: Session, task: AuditTask,
     def _call_once(sub_batch: List[Material]) -> Dict[int, int]:
         prompt = _build_prompt(sub_batch, indicators)
         try:
-            data = llm.extract_json(prompt, system=SYSTEM_PROMPT, max_tokens=8192)
+            data = llm.extract_json(prompt, system=SYSTEM_PROMPT, max_tokens=MAX_TOKENS)
         except Exception as exc:
             print(f"[ai_classify] LLM 失败: {exc}")
             return {}
