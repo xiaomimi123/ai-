@@ -166,3 +166,28 @@ def test_orchestrator_filters_unbound_by_subcategory():
     assert len(out) == 1
     assert "预算" in out[0].file_name
     db.close()
+
+
+def test_fallback_indicator_for_subcategory_returns_canonical_code():
+    from app.services.material_matcher import fallback_indicator_for_subcategory
+
+    class FakeInd:
+        def __init__(self, code, sub):
+            self.indicator_code = code
+            self.subcategory = sub
+            self.category = sub
+            self.name = code
+
+    inds = [
+        FakeInd("I-13", "（一）预算业务控制"),
+        FakeInd("I-15", "（一）预算业务控制"),
+        FakeInd("I-44", "（六）合同控制"),
+        FakeInd("I-55", "补充指标"),
+    ]
+    assert fallback_indicator_for_subcategory("（一）预算业务控制", inds).indicator_code == "I-13"
+    assert fallback_indicator_for_subcategory("（六）合同控制", inds).indicator_code == "I-44"
+    # 子类不在 fallback 表 → 退到 I-55
+    assert fallback_indicator_for_subcategory("（七）某未知子类", inds).indicator_code == "I-55"
+    # 连 I-55 都没有 → None
+    no_i55 = [FakeInd("I-13", "（一）预算业务控制")]
+    assert fallback_indicator_for_subcategory("（七）某未知子类", no_i55) is None

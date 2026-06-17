@@ -188,3 +188,34 @@ def filter_materials_by_subcategory(materials: list,
         if sub and _normalize(sub) == target:
             out.append(m)
     return out
+
+
+# ============================================================
+# subcategory 兜底（v1.1 新增）：AI / 关键词都没命中时，
+# 把材料硬绑到该子类的「制度类指标」，保证 0 未绑定
+# ============================================================
+SUBCATEGORY_FALLBACK: dict[str, str] = {
+    "组织层面内部控制":           "I-01",
+    "（一）预算业务控制":         "I-13",
+    "（二）收支业务控制":         "I-20",
+    "（三）政府采购业务控制":     "I-25",
+    "（四）资产控制":             "I-32",
+    "（五）建设项目控制":         "I-37",
+    "（六）合同控制":             "I-44",
+    "内部监督":                   "I-53",
+    "补充指标":                   "I-55",
+}
+
+
+def fallback_indicator_for_subcategory(subcategory: str,
+                                       indicators: Iterable[Indicator]) -> Optional[Indicator]:
+    """子类 → 该子类制度类指标的兜底映射。
+
+    优先用 SUBCATEGORY_FALLBACK 表里的 code 找指标；
+    找不到时退化到 I-55「补充指标」；I-55 也没有则返回 None。
+    """
+    code = SUBCATEGORY_FALLBACK.get(_normalize(subcategory))
+    code2ind = {ind.indicator_code: ind for ind in indicators}
+    if code and code in code2ind:
+        return code2ind[code]
+    return code2ind.get("I-55")
