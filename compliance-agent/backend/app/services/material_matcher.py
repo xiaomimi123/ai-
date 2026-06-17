@@ -213,7 +213,10 @@ def fallback_indicator_for_subcategory(subcategory: str,
 
     优先用 SUBCATEGORY_FALLBACK 表里的 code 找指标；
     找不到时退化到 I-55「补充指标」；I-55 也没有则返回 None。
+    空字符串 / None 输入直接返回 None（防止 caller 失误时误绑到补充指标）。
     """
+    if not subcategory:
+        return None
     code = SUBCATEGORY_FALLBACK.get(_normalize(subcategory))
     code2ind = {ind.indicator_code: ind for ind in indicators}
     if code and code in code2ind:

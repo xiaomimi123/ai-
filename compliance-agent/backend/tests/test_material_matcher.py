@@ -191,3 +191,42 @@ def test_fallback_indicator_for_subcategory_returns_canonical_code():
     # 连 I-55 都没有 → None
     no_i55 = [FakeInd("I-13", "（一）预算业务控制")]
     assert fallback_indicator_for_subcategory("（七）某未知子类", no_i55) is None
+
+
+def test_fallback_falls_through_to_i55_when_target_code_missing():
+    """子类在 SUBCATEGORY_FALLBACK 表里，但其 code 在 indicators 集合中不存在 → 退到 I-55。
+
+    生产环境最可能命中的路径：法规/指标库部分加载，I-13 缺失但 I-55 在。
+    """
+    from app.services.material_matcher import fallback_indicator_for_subcategory
+
+    class FakeInd:
+        def __init__(self, code, sub):
+            self.indicator_code = code
+            self.subcategory = sub
+            self.category = sub
+            self.name = code
+
+    # "内部监督" 在 SUBCATEGORY_FALLBACK 表 → I-53；但 indicators 只有 I-55
+    partial = [FakeInd("I-55", "补充指标")]
+    result = fallback_indicator_for_subcategory("内部监督", partial)
+    assert result is not None and result.indicator_code == "I-55"
+
+
+def test_fallback_returns_none_for_empty_subcategory():
+    """空字符串 / None 输入应直接返回 None，而不是兜底到 I-55。
+
+    防止 caller 传空 subcategory 时误绑材料到补充指标。
+    """
+    from app.services.material_matcher import fallback_indicator_for_subcategory
+
+    class FakeInd:
+        def __init__(self, code, sub):
+            self.indicator_code = code
+            self.subcategory = sub
+            self.category = sub
+            self.name = code
+
+    inds = [FakeInd("I-55", "补充指标")]
+    assert fallback_indicator_for_subcategory("", inds) is None
+    assert fallback_indicator_for_subcategory(None, inds) is None
