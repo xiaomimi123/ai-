@@ -129,4 +129,6 @@ def test_system_prompt_forbids_skipping():
             self.category = ""
             self.name = c
     p = _build_prompt([FakeMat(1), FakeMat(2)], [FakeInd("I-13"), FakeInd("I-55")])
-    assert "必须" in p and "省略" not in p
+    assert "必须覆盖所有传入的 material_id" in p
+    assert "禁止遗漏" in p
+    assert "省略" not in p

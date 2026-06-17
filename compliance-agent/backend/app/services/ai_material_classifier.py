@@ -3,12 +3,12 @@
 批量将未绑定材料发给 LLM，让它根据文件名 + 解析文本内容，决定材料属于
 哪个指标。LLM 一次性返回 {material_id: indicator_code} 映射。
 
-设计要点：
-- 分批处理（默认 15 份/批），避免单次 prompt 超 32K token
-- 每份材料只截取前 800 字（够 LLM 判断主题）
+设计要点（v1.1）：
+- 分批处理（默认 10 份/批），避免单次 prompt 超 32K token
+- 每份材料截取前 1500 字（v1.1 由 800 上调，给 LLM 更多判断信号）
 - stub 模式（无真实 LLM）直接返回空，让 fallback 用关键词
 - LLM 返回的 indicator_code 不在 55 项内 → 忽略
-- 1 份材料最多绑 1 个指标
+- 1 份材料最多绑 1 个指标，且 prompt 强制要求每份材料都必须返回（v1.1）
 """
 from __future__ import annotations
 
