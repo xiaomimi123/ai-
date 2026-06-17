@@ -179,7 +179,7 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
             keyword_bound += 1
             if len(samples) < 5:
                 samples.append({
-                    "file": m.file_name[:60],
+                    "file": (m.file_name or "")[:60],
                     "indicator_code": ind.indicator_code,
                     "source": "keyword",
                 })
@@ -192,6 +192,7 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
     ai_bound = 0
     ai_used = False
     if use_ai and still_unbound:
+        new_still: list[Material] = list(still_unbound)
         try:
             from app.llm.factory import get_llm_client
             from app.llm.stub import StubLLMClient
@@ -199,7 +200,7 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
             llm = get_llm_client(db)
             ai_used = not isinstance(llm, StubLLMClient)
             mapping = ai_classify_materials(db, task, llm, still_unbound, indicators)
-            new_still: list[Material] = []
+            new_still = []  # 重新累加
             for m in still_unbound:
                 iid = mapping.get(m.id)
                 if iid is None:
@@ -210,31 +211,37 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
                 if len(samples) < 10:
                     ind = next((x for x in indicators if x.id == iid), None)
                     samples.append({
-                        "file": m.file_name[:60],
+                        "file": (m.file_name or "")[:60],
                         "indicator_code": ind.indicator_code if ind else "?",
                         "source": "ai",
                     })
-            still_unbound = new_still
         except Exception as exc:
             print(f"[auto_bind] AI 分类失败（仅关键词生效）: {exc}")
+        still_unbound = new_still
 
-    # 第 3 阶段：subcategory 兜底（v1.1 新增）—— 保证 still_unbound == 0
+    # 第 3 阶段：subcategory 兜底（v1.1 新增）—— 尽量将 still_unbound 降为 0
+    # 注意：若 fallback 表里某指标在库中缺失（如 I-55 未 seed），该材料仍保留未绑定
     from app.services.material_matcher import (
         match_subcategory, fallback_indicator_for_subcategory,
     )
     fallback_bound = 0
     for m in list(still_unbound):
+        if m.indicator_id is not None:
+            still_unbound.remove(m)
+            continue
         signal = (m.file_name or "") + " " + (m.parsed_text or "")[:500]
         sub = match_subcategory(signal) or "补充指标"
         ind = fallback_indicator_for_subcategory(sub, indicators)
         if not ind:
+            print(f"[auto_bind] 兜底失败：材料 {m.file_name!r} subcategory={sub!r} "
+                  f"fallback 找不到对应指标（库中缺失 I-55？）")
             continue
         m.indicator_id = ind.id
         fallback_bound += 1
         still_unbound.remove(m)
         if len(samples) < 15:
             samples.append({
-                "file": m.file_name[:60],
+                "file": (m.file_name or "")[:60],
                 "indicator_code": ind.indicator_code,
                 "source": "fallback",
             })
