@@ -1425,9 +1425,10 @@ window.runAutoBind = async function() {
   toast("AI 正在阅读材料内容，请稍候…（约 1-2 分钟）");
   try {
     const res = await api(`/tasks/${State.taskId}/materials/auto-bind`, { method: "POST" });
+    const fb = res.fallback_bound || 0;
     const detail = res.ai_used
-      ? `关键词命中 ${res.keyword_bound} + AI 命中 ${res.ai_bound}`
-      : `关键词命中 ${res.keyword_bound}（未启用 LLM）`;
+      ? `关键词命中 ${res.keyword_bound} + AI 命中 ${res.ai_bound} + 兜底 ${fb}`
+      : `关键词命中 ${res.keyword_bound} + 兜底 ${fb}（未启用 LLM）`;
     toast(`✓ ${detail}，剩 ${res.still_unbound} 份未绑定`, "success");
     await loadTaskWorkspace(State.taskId);
   } catch (e) {
