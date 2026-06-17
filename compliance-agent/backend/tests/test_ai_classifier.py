@@ -107,3 +107,26 @@ def test_keyword_first_then_ai(client, monkeypatch):
     # LLM 只应该看到 m2（不应该看到 m1）
     assert m1["id"] not in received_materials
     assert m2["id"] in received_materials
+
+
+def test_system_prompt_forbids_skipping():
+    from app.services.ai_material_classifier import SYSTEM_PROMPT, _build_prompt
+
+    # 系统提示词必须强制 LLM 给每份材料返回结果
+    assert "禁止省略" in SYSTEM_PROMPT or "必须为每份材料" in SYSTEM_PROMPT
+    assert "省略该材料" not in SYSTEM_PROMPT  # 旧的"实在判断不出来就省略"已删
+
+    # 用户提示词同样强制全覆盖
+    class FakeMat:
+        def __init__(self, mid):
+            self.id = mid
+            self.file_name = f"f{mid}.pdf"
+            self.parsed_text = "x"
+    class FakeInd:
+        def __init__(self, c):
+            self.indicator_code = c
+            self.subcategory = ""
+            self.category = ""
+            self.name = c
+    p = _build_prompt([FakeMat(1), FakeMat(2)], [FakeInd("I-13"), FakeInd("I-55")])
+    assert "必须" in p and "省略" not in p

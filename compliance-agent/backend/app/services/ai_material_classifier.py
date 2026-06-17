@@ -26,13 +26,14 @@ SYSTEM_PROMPT = (
     "你是内控评价审计的资深辅助员。任务：根据用户提供的材料内容，"
     "把每份材料映射到对应的「评价指标」编号（I-01 ~ I-55）。"
     "判断依据：材料的主题、制度名称、章节、关键词。"
-    "严格要求：① 每份材料最多绑 1 个指标 ② 只能用提供的 indicator_code "
-    "③ 实在判断不出来就省略该材料 ④ 严禁臆造 indicator_code。"
+    "严格要求：① 必须为每份材料返回 1 个 indicator_code，禁止省略任何一份 "
+    "② 把握不大时也要选最接近的一项，宁可猜也要给 "
+    "③ 只能用提供的 indicator_code，严禁臆造。"
 )
 
 
-BATCH_SIZE = 15
-TEXT_PREVIEW = 800
+BATCH_SIZE = 10
+TEXT_PREVIEW = 1500
 
 
 def _format_indicator_list(indicators: List[Indicator]) -> str:
@@ -66,7 +67,7 @@ def _build_prompt(batch: List[Material], indicators: List[Indicator]) -> str:
         f"{_format_materials(batch)}\n\n"
         "请返回严格 JSON：\n"
         '{"mappings": [{"material_id": 数字, "indicator_code": "I-XX", "reason": "≤40字理由"}]}\n'
-        "未能判断的材料不要出现在 mappings 里。"
+        "必须覆盖所有传入的 material_id，禁止遗漏；把握不大时也要选最接近的一项。"
     )
 
 
