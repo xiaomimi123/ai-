@@ -84,6 +84,23 @@ def delete_unit(unit_id: int,
     return {"status": "ok"}
 
 
+@units_router.post("/import-from-file", response_model=dict)
+async def import_units_from_file_api(
+    file: UploadFile = File(...),
+    dry_run: bool = Query(False, description="true 仅返回预览不入库"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auditor),
+):
+    """Excel / CSV 批量导入被检查单位（已存在同名 → 跳过）。"""
+    from app.services.unit_import_service import import_units_from_file
+    raw = await file.read()
+    try:
+        return import_units_from_file(db, raw, file.filename or "u.xlsx",
+                                      dry_run=dry_run, user=user)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 # ============================================================
 # 任务
 # ============================================================

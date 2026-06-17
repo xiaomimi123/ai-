@@ -93,3 +93,48 @@ def test_import_units_dry_run_does_not_write(tmp_path, monkeypatch):
         assert result["preview"][0]["name"] == "干跑单位"
         # 库里没真写
         assert db.query(AuditUnit).filter_by(name="干跑单位").first() is None
+
+
+def test_api_import_units_endpoint(auth_headers):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    raw = _make_xlsx([
+        ["代码", "单位名称"],
+        ["E1", "API 测试单位 1"],
+        ["E2", "API 测试单位 2"],
+    ])
+    with TestClient(app) as c:
+        files = {"file": ("u.xlsx", io.BytesIO(raw),
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+        r = c.post("/api/units/import-from-file?dry_run=true",
+                   files=files, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["total"] == 2
+        assert "preview" in body
+
+        # 真正入库
+        files = {"file": ("u.xlsx", io.BytesIO(raw),
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+        r = c.post("/api/units/import-from-file", files=files, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["inserted"] == 2
+        assert body["skipped"] == 0
+
+        # 第二次同样文件 → 全部跳过
+        files = {"file": ("u.xlsx", io.BytesIO(raw),
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+        r = c.post("/api/units/import-from-file", files=files, headers=auth_headers)
+        assert r.json()["inserted"] == 0
+        assert r.json()["skipped"] == 2
+
+
+def test_api_import_units_bad_header_returns_400(auth_headers):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    raw = _make_xlsx([["列A", "列B"], ["x", "y"]])
+    with TestClient(app) as c:
+        files = {"file": ("u.xlsx", io.BytesIO(raw), "application/octet-stream")}
+        r = c.post("/api/units/import-from-file", files=files, headers=auth_headers)
+        assert r.status_code == 400
