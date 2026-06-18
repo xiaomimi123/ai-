@@ -366,9 +366,15 @@ async function openCreateTaskModal() {
     ]);
     State.units = units;
     State.indicators = indicators;
-    const sel = document.getElementById("ct-unit-select");
-    sel.innerHTML = `<option value="">— 选择单位 —</option>` +
-      units.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join("");
+    // 给每个单位预算拼音首字母（缓存在 _initials 字段，只算一次）
+    units.forEach(u => {
+      if (u._initials == null) {
+        u._initials = (typeof pinyinInitials === "function")
+          ? pinyinInitials(u.name || "")
+          : "";
+      }
+    });
+    setupUnitSearch(units);
 
     // 指标多选列表
     const picker = document.getElementById("ct-indicator-list");
@@ -402,9 +408,113 @@ async function openCreateTaskModal() {
     document.getElementById("ct-new-unit-form").classList.add("hidden");
     document.getElementById("ct-error").classList.add("hidden");
     document.getElementById("task-create-form").reset();
-    document.getElementById("ct-unit-select").value = "";
+    document.getElementById("ct-unit-input").value = "";
+    document.getElementById("ct-unit-id").value = "";
+    document.getElementById("ct-unit-dropdown").classList.add("hidden");
+    document.getElementById("ct-unit-tip").textContent = "";
     document.getElementById("ct-indicator-picker").classList.add("hidden");
   } catch (e) { toast(e.message, "error"); }
+}
+
+// ============================================================
+// 单位搜索控件（中文模糊 + 拼音首字母 + 代码精确）
+// ============================================================
+const UNIT_SEARCH_LIMIT = 50;
+function _unitMatches(query, units) {
+  if (!query) return units.slice(0, UNIT_SEARCH_LIMIT);
+  const q = query.trim();
+  if (!q) return units.slice(0, UNIT_SEARCH_LIMIT);
+  const qUpper = q.toUpperCase();
+  const out = [];
+  for (const u of units) {
+    if (u.name && u.name.includes(q)) { out.push(u); }
+    else if (u.code && u.code.includes(q)) { out.push(u); }
+    else if (u._initials && u._initials.includes(qUpper)) { out.push(u); }
+    if (out.length >= UNIT_SEARCH_LIMIT) break;
+  }
+  return out;
+}
+
+function _renderUnitDropdown(units, activeIdx, total) {
+  const dd = document.getElementById("ct-unit-dropdown");
+  if (!units.length) {
+    dd.innerHTML = `<div style="padding:12px;color:#999">没找到匹配的单位</div>`;
+    return;
+  }
+  dd.innerHTML = units.map((u, i) => `
+    <div class="ct-unit-item" data-id="${u.id}" data-idx="${i}"
+         style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;${i===activeIdx?'background:#e8f0fe':''}">
+      <div style="font-size:14px">${esc(u.name)}</div>
+      ${u.code ? `<div style="font-size:12px;color:#999">${esc(u.code)}</div>` : ''}
+    </div>
+  `).join("");
+  if (total > units.length) {
+    dd.innerHTML += `<div style="padding:6px 12px;font-size:12px;color:#999;text-align:center;border-top:1px solid #eee">仅显示前 ${units.length} 条，继续输入以精确匹配</div>`;
+  }
+}
+
+function setupUnitSearch(units) {
+  const input = document.getElementById("ct-unit-input");
+  const hidden = document.getElementById("ct-unit-id");
+  const dd = document.getElementById("ct-unit-dropdown");
+  const tip = document.getElementById("ct-unit-tip");
+  let activeIdx = -1;
+  let lastMatches = [];
+
+  function refresh() {
+    const matches = _unitMatches(input.value, units);
+    lastMatches = matches;
+    activeIdx = matches.length ? 0 : -1;
+    _renderUnitDropdown(matches, activeIdx, units.length);
+    dd.classList.remove("hidden");
+    tip.textContent = input.value ? `匹配 ${matches.length} 条 / 库内 ${units.length}` : `库内共 ${units.length} 个单位`;
+  }
+
+  input.oninput = () => {
+    hidden.value = "";  // 改输入即失效之前的选择
+    refresh();
+  };
+  input.onfocus = refresh;
+  input.onkeydown = (ev) => {
+    if (dd.classList.contains("hidden")) return;
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, lastMatches.length - 1);
+      _renderUnitDropdown(lastMatches, activeIdx, units.length);
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      _renderUnitDropdown(lastMatches, activeIdx, units.length);
+    } else if (ev.key === "Enter") {
+      if (activeIdx >= 0 && lastMatches[activeIdx]) {
+        ev.preventDefault();
+        const u = lastMatches[activeIdx];
+        input.value = u.name;
+        hidden.value = u.id;
+        dd.classList.add("hidden");
+        tip.textContent = `已选：${u.name}`;
+      }
+    } else if (ev.key === "Escape") {
+      dd.classList.add("hidden");
+    }
+  };
+  dd.onclick = (ev) => {
+    const item = ev.target.closest(".ct-unit-item");
+    if (!item) return;
+    const id = parseInt(item.dataset.id, 10);
+    const u = units.find(x => x.id === id);
+    if (!u) return;
+    input.value = u.name;
+    hidden.value = u.id;
+    dd.classList.add("hidden");
+    tip.textContent = `已选：${u.name}`;
+  };
+  // 点外面收起
+  document.addEventListener("click", (ev) => {
+    if (!document.getElementById("ct-unit-search").contains(ev.target)) {
+      dd.classList.add("hidden");
+    }
+  });
 }
 
 // scope radio 切换显隐指标多选区
@@ -431,10 +541,12 @@ document.getElementById("ct-create-unit").addEventListener("click", async () => 
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, code, level: "单位" }),
     });
-    const sel = document.getElementById("ct-unit-select");
-    const opt = document.createElement("option");
-    opt.value = unit.id; opt.textContent = unit.name; opt.selected = true;
-    sel.appendChild(opt);
+    // 新建的单位补进 State.units 并直接选中（搜索框 + hidden）
+    unit._initials = (typeof pinyinInitials === "function") ? pinyinInitials(unit.name || "") : "";
+    State.units.push(unit);
+    document.getElementById("ct-unit-input").value = unit.name;
+    document.getElementById("ct-unit-id").value = unit.id;
+    document.getElementById("ct-unit-dropdown").classList.add("hidden");
     status.textContent = `✓ 已新建：${unit.name}`;
     form.elements["new_unit_name"].value = "";
     form.elements["new_unit_code"].value = "";
@@ -456,6 +568,12 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
   const fd = new FormData(ev.target);
   const errBox = document.getElementById("ct-error");
   errBox.classList.add("hidden");
+
+  if (!fd.get("unit_id")) {
+    errBox.textContent = "请从下拉列表中选择一个被检查单位（仅输入文字不够，要点选或按回车确认）";
+    errBox.classList.remove("hidden");
+    return;
+  }
 
   const scope = fd.get("scope") || "all";
   let selectedIds = [];

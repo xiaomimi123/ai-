@@ -853,9 +853,15 @@
     <form id="task-create-form">
       <div class="form-group">
         <label class="form-label">被检查单位</label>
-        <select name="unit_id" id="ct-unit-select" class="form-select" required>
-          <option value="">— 选择单位 —</option>
-        </select>
+        <div id="ct-unit-search" style="position:relative">
+          <input type="text" id="ct-unit-input" class="form-input" autocomplete="off"
+                 placeholder="输入单位名/拼音首字母/代码（如：凉山 / lszflmt / 200082）"
+                 required />
+          <input type="hidden" name="unit_id" id="ct-unit-id" value="" />
+          <div id="ct-unit-dropdown" class="hidden"
+               style="position:absolute;top:100%;left:0;right:0;z-index:50;max-height:280px;overflow-y:auto;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.08);margin-top:4px"></div>
+          <div id="ct-unit-tip" class="text-xs text-faint mt-1"></div>
+        </div>
         <button type="button" class="btn-link mt-2" id="ct-new-unit"><span data-icon="plus"></span><span>新建单位</span></button>
       </div>
       <div id="ct-new-unit-form" class="hidden mb-4" style="background:var(--bg);padding:12px;border-radius:8px">
@@ -1191,6 +1197,7 @@
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
 
+<script src="/static/pinyin_initials.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>
