@@ -22,7 +22,7 @@ def parse_new_indicators(txt_path: str) -> List[Dict]:
     """
     lines = [
         l.strip()
-        for l in Path(txt_path).read_text(encoding="utf-8").splitlines()
+        for l in Path(txt_path).read_text(encoding="utf-8-sig").splitlines()
         if l.strip()
     ]
     items: List[Dict] = []
