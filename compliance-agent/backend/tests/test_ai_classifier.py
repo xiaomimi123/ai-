@@ -8,6 +8,19 @@ def client(auth_headers):
     from app.main import app
     from app.seeds.load_indicators_55 import load
     load(replace=True)
+    # v1.2: 给关键 indicator 加 required_materials，让新 matcher 能匹配
+    from app.models import SessionLocal, Indicator
+    import json as _json
+    _hints = {
+        "I-01": ["三重一大决策制度", "三重一大议事规则"],
+        "I-13": ["预算管理办法", "预算编制"],
+    }
+    with SessionLocal() as _db:
+        for code, kws in _hints.items():
+            ind = _db.query(Indicator).filter_by(indicator_code=code).first()
+            if ind:
+                ind.required_materials = _json.dumps(kws, ensure_ascii=False)
+        _db.commit()
     with TestClient(app, headers=auth_headers) as c:
         yield c
 
