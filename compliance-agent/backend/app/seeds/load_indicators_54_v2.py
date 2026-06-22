@@ -47,3 +47,50 @@ def parse_new_indicators(txt_path: str) -> List[Dict]:
             "required_materials": materials,
         })
     return items
+
+
+def apply(db: Session, items: List[Dict]) -> Dict:
+    """按 indicator_code UPDATE name + required_materials；I-55 单独改名。
+
+    返回 {updated: int, skipped: list[str], i55_renamed: bool}
+    """
+    updated = 0
+    skipped: List[str] = []
+    for it in items:
+        code = it["indicator_code"]
+        ind = db.query(Indicator).filter_by(indicator_code=code).first()
+        if not ind:
+            skipped.append(code)
+            continue
+        ind.name = it["name"]
+        ind.required_materials = json.dumps(
+            it["required_materials"], ensure_ascii=False,
+        )
+        updated += 1
+
+    i55 = db.query(Indicator).filter_by(indicator_code="I-55").first()
+    if i55:
+        i55.name = "未分类/人工复核"
+        # 兜底指标，required_materials 留空
+    db.commit()
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "i55_renamed": bool(i55),
+    }
+
+
+if __name__ == "__main__":
+    import sys
+    txt_path = (
+        sys.argv[1] if len(sys.argv) > 1
+        else "/app/app/seeds/indicators_54_v2.txt"
+    )
+    items = parse_new_indicators(txt_path)
+    print(f"解析到 {len(items)} 项新指标")
+    with SessionLocal() as db:
+        result = apply(db, items)
+    print(
+        f"更新 {result['updated']} / 跳过 {result['skipped']} "
+        f"/ I-55 改名 {result['i55_renamed']}"
+    )
