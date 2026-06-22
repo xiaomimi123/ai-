@@ -113,9 +113,9 @@ def upload_material(db: Session, task: AuditTask, *,
 
     # 自动按文件名/路径关键词绑定到指标（仅当未显式指定时）
     if not indicator_id:
-        from app.services.material_matcher import match_indicator
+        from app.services.material_matcher import match_indicator_by_content
         all_inds = db.query(Indicator).all()
-        auto = match_indicator(file_name, all_inds)
+        auto = match_indicator_by_content(file_name, parsed.text or "", all_inds)
         if auto:
             indicator_id = auto.id
             indicator = auto
@@ -162,7 +162,7 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
     返回：
     {checked, keyword_bound, ai_bound, still_unbound, samples, ai_used}
     """
-    from app.services.material_matcher import match_indicator
+    from app.services.material_matcher import match_indicator_by_content
     indicators = db.query(Indicator).all()
 
     # 第 1 阶段：关键词匹配
@@ -173,7 +173,9 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
     samples: list[dict] = []
 
     for m in unbound_materials:
-        ind = match_indicator(m.file_name, indicators)
+        ind = match_indicator_by_content(
+            m.file_name, m.parsed_text or "", indicators,
+        )
         if ind:
             m.indicator_id = ind.id
             keyword_bound += 1
