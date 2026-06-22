@@ -222,3 +222,39 @@ def fallback_indicator_for_subcategory(subcategory: str,
     if code and code in code2ind:
         return code2ind[code]
     return code2ind.get("I-55")
+
+
+# ============================================================
+# v1.2 新增：基于 required_materials JSON 的内容匹配
+# ============================================================
+def match_indicator_by_content(
+    file_name: str,
+    parsed_text: str,
+    indicators: Iterable[Indicator],
+) -> Optional[Indicator]:
+    """匹配范围 = 文件名 + parsed_text 前 1000 字。
+
+    规则：
+    - 对每个指标，从其 required_materials JSON 数组拿关键词
+    - haystack = file_name + parsed_text[:1000]
+    - 任一关键词被 haystack 包含 → 计 1 分
+    - 命中分数最高的指标返回；并列时返回 indicator_code 最小的
+    - 0 分（无任何指标关键词命中）→ 返回 None
+    """
+    import json as _json
+    haystack = _normalize(file_name) + " " + _normalize((parsed_text or "")[:1000])
+    if not haystack.strip():
+        return None
+    scores: list[tuple[int, Indicator]] = []
+    for ind in indicators:
+        try:
+            keywords = _json.loads(ind.required_materials or "[]")
+        except Exception:
+            continue
+        score = sum(1 for kw in keywords if kw and str(kw) in haystack)
+        if score > 0:
+            scores.append((score, ind))
+    if not scores:
+        return None
+    scores.sort(key=lambda x: (-x[0], x[1].indicator_code))
+    return scores[0][1]

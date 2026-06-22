@@ -230,3 +230,79 @@ def test_fallback_returns_none_for_empty_subcategory():
     inds = [FakeInd("I-55", "补充指标")]
     assert fallback_indicator_for_subcategory("", inds) is None
     assert fallback_indicator_for_subcategory(None, inds) is None
+
+
+import json as _json
+
+
+def _fake_ind(code, sub, materials):
+    """轻量 Indicator 替身（带 required_materials JSON）。"""
+    class FakeInd:
+        pass
+    f = FakeInd()
+    f.id = int(code.split("-")[1]) if "-" in code else 0
+    f.indicator_code = code
+    f.subcategory = sub
+    f.category = sub
+    f.name = code
+    f.required_materials = _json.dumps(materials, ensure_ascii=False)
+    return f
+
+
+def test_match_indicator_by_content_matches_file_name():
+    from app.services.material_matcher import match_indicator_by_content
+    inds = [
+        _fake_ind("I-04", "组织层面", ["岗位职责", "岗位说明书"]),
+        _fake_ind("I-13", "（一）预算业务控制", ["预算管理办法", "预算编制"]),
+    ]
+    hit = match_indicator_by_content("岗位说明书 2025.docx", "", inds)
+    assert hit is not None and hit.indicator_code == "I-04"
+
+
+def test_match_indicator_by_content_matches_parsed_text():
+    """文件名无关键词，但 parsed_text 前 1000 字含关键词 → 命中。"""
+    from app.services.material_matcher import match_indicator_by_content
+    inds = [
+        _fake_ind("I-13", "（一）预算业务控制", ["预算编制说明"]),
+    ]
+    hit = match_indicator_by_content(
+        "untitled.pdf",
+        "本制度规定预算编制说明的格式...",
+        inds,
+    )
+    assert hit is not None and hit.indicator_code == "I-13"
+
+
+def test_match_indicator_by_content_picks_highest_score():
+    """多指标都命中 → 取关键词命中数最多的。"""
+    from app.services.material_matcher import match_indicator_by_content
+    inds = [
+        _fake_ind("I-04", "组织层面", ["岗位"]),
+        _fake_ind("I-13", "（一）预算业务控制", ["预算", "预算编制", "预算公开"]),
+    ]
+    # haystack 命中 I-04 1 次，I-13 3 次
+    hit = match_indicator_by_content(
+        "岗位预算编制说明.pdf",
+        "预算编制 + 预算公开",
+        inds,
+    )
+    assert hit.indicator_code == "I-13"
+
+
+def test_match_indicator_by_content_returns_none_when_no_match():
+    from app.services.material_matcher import match_indicator_by_content
+    inds = [
+        _fake_ind("I-04", "组织层面", ["岗位职责"]),
+    ]
+    hit = match_indicator_by_content("一份完全无关的文件.txt", "内容也无关", inds)
+    assert hit is None
+
+
+def test_match_indicator_by_content_truncates_text_to_1000_chars():
+    """parsed_text 超 1000 字时 → 1000 字之后的关键词不参与匹配。"""
+    from app.services.material_matcher import match_indicator_by_content
+    inds = [_fake_ind("I-04", "组织层面", ["岗位职责"])]
+    pad = "x" * 1500
+    # 关键词在 1500 字符之后 → 不该命中
+    hit = match_indicator_by_content("无关.pdf", pad + "岗位职责", inds)
+    assert hit is None
