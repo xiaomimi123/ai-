@@ -68,6 +68,8 @@ def apply(db: Session, items: List[Dict]) -> Dict:
         )
         updated += 1
 
+    # I-55 单独改名：典型 items 不含 I-55（它在 txt 里没有），所以这里的 rename
+    # 不计入 updated 计数。调用方需检查 i55_renamed 才能知道兜底指标改没改。
     i55 = db.query(Indicator).filter_by(indicator_code="I-55").first()
     if i55:
         i55.name = "未分类/人工复核"
@@ -81,6 +83,9 @@ def apply(db: Session, items: List[Dict]) -> Dict:
 
 
 if __name__ == "__main__":
+    # 仅在容器内执行：docker compose exec backend python -m app.seeds.load_indicators_54_v2
+    # 默认 txt 路径 /app/app/seeds/indicators_54_v2.txt 是容器内路径，
+    # 本机直接 python -m ... 需显式传 txt 路径作为 sys.argv[1]
     import sys
     txt_path = (
         sys.argv[1] if len(sys.argv) > 1
