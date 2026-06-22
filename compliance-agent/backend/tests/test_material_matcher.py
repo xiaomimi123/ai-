@@ -306,3 +306,11 @@ def test_match_indicator_by_content_truncates_text_to_1000_chars():
     # 关键词在 1500 字符之后 → 不该命中
     hit = match_indicator_by_content("无关.pdf", pad + "岗位职责", inds)
     assert hit is None
+
+
+def test_match_indicator_legacy_wrapper_delegates_to_by_content():
+    """老 match_indicator(file_name, indicators) 调用仍能用，内部 delegate 到 by_content。"""
+    from app.services.material_matcher import match_indicator
+    inds = [_fake_ind("I-04", "组织层面", ["岗位说明书"])]
+    hit = match_indicator("某某岗位说明书.docx", inds)
+    assert hit is not None and hit.indicator_code == "I-04"

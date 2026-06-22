@@ -134,45 +134,11 @@ def match_subcategory(file_name: str) -> Optional[str]:
 
 def match_indicator(file_name: str,
                     indicators: Iterable[Indicator]) -> Optional[Indicator]:
-    """精准匹配单个指标。
+    """v1.2 起：兼容包装 → match_indicator_by_content(file_name, "", indicators)。
 
-    规则：
-    - 必须先命中所属子类（防"合同"误绑到"采购合同"）
-    - 在子类内用 INDICATOR_HINTS 关键词命中
-    - 唯一命中才返回；多个命中返回 None
+    保留此函数避免破坏旧调用方。新代码请直接用 match_indicator_by_content。
     """
-    s = _normalize(file_name)
-    if not s:
-        return None
-
-    sub = match_subcategory(s)
-    if not sub:
-        return None
-
-    # 候选指标：subcategory 匹配 + 兼容组织层面/内部监督等 category-only 情况
-    candidates: List[Indicator] = []
-    for ind in indicators:
-        ind_sub = ind.subcategory or ind.category or ""
-        if _normalize(ind_sub) == sub:
-            candidates.append(ind)
-    if not candidates:
-        return None
-
-    # 在候选指标里用关键词命中
-    hits = []
-    for ind in candidates:
-        kws = INDICATOR_HINTS.get(ind.indicator_code, [])
-        # 兜底：用指标 name 本身的 2-4 字关键词
-        if not kws and ind.name:
-            kws = [ind.name]
-        for kw in kws:
-            if kw and kw in s:
-                hits.append(ind)
-                break
-
-    if len(hits) == 1:
-        return hits[0]
-    return None
+    return match_indicator_by_content(file_name, "", list(indicators))
 
 
 def filter_materials_by_subcategory(materials: list,
