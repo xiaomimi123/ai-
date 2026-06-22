@@ -191,3 +191,29 @@ def test_ai_classify_retries_missing_materials():
     assert result == {1: 1, 2: 13, 3: 55}
     assert 999 not in result  # alien id 必须被 sub_batch 成员资格过滤掉
     assert len(calls) == 2  # 1 次批量 + 1 次补单
+
+
+def test_format_indicator_list_includes_required_materials():
+    """指标列表每行应附加「典型材料：...」提示让 LLM 判断更准。"""
+    from app.services.ai_material_classifier import _format_indicator_list
+    import json as _json
+
+    class FakeInd:
+        def __init__(self, code, name, sub, mats):
+            self.indicator_code = code
+            self.name = name
+            self.subcategory = sub
+            self.category = sub
+            self.required_materials = _json.dumps(mats, ensure_ascii=False)
+
+    inds = [
+        FakeInd("I-04", "分岗设权", "组织层面", ["岗位职责", "岗位说明书"]),
+        FakeInd("I-55", "未分类/人工复核", "补充指标", []),
+    ]
+    out = _format_indicator_list(inds)
+    assert "I-04" in out and "分岗设权" in out
+    assert "典型材料：岗位职责、岗位说明书" in out
+    # 空 required_materials 的 I-55 不出现"典型材料"标签
+    assert "I-55" in out
+    i55_line = [l for l in out.split("\n") if "I-55" in l][0]
+    assert "典型材料" not in i55_line

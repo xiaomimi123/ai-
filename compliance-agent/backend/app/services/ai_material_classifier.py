@@ -38,10 +38,20 @@ MAX_TOKENS = 8192
 
 
 def _format_indicator_list(indicators: List[Indicator]) -> str:
+    """v1.2: 把 required_materials 前 6 个拼进每行作为「典型材料」提示。"""
+    import json as _json
     lines = []
     for ind in indicators:
         sub = ind.subcategory or ind.category or ""
-        lines.append(f"- {ind.indicator_code} [{sub}] {ind.name}")
+        try:
+            mats = _json.loads(getattr(ind, "required_materials", None) or "[]")
+        except Exception:
+            mats = []
+        mats_str = (
+            f"（典型材料：{'、'.join(str(m) for m in mats[:6])}）"
+            if mats else ""
+        )
+        lines.append(f"- {ind.indicator_code} [{sub}] {ind.name}{mats_str}")
     return "\n".join(lines)
 
 
