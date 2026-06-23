@@ -737,6 +737,53 @@
                   </div>
                 </form>
               </div>
+
+              <!-- v1.3 Qwen-VL 视觉 OCR 配置 -->
+              <div class="console-section" style="margin-top:24px">
+                <div class="console-section-head">
+                  <h2 class="console-section-title">Qwen-VL 视觉 OCR（扫描件 PDF 印章/日期/文号识别）</h2>
+                  <p class="console-section-desc">
+                    启用后，上传的扫描件 PDF 会自动调阿里云通义千问视觉模型识别红色公章、落款日期、文号、发文机关。
+                    文字 PDF 不调用，不产生费用。
+                  </p>
+                </div>
+                <form id="vision-form">
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">启用 OCR</div>
+                      <div class="kv-key-sub">扫描件 PDF 自动调 Qwen-VL</div>
+                    </div>
+                    <div class="kv-value">
+                      <label><input type="checkbox" id="vision-enabled" /> 启用</label>
+                    </div>
+                  </div>
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">dashscope API key</div>
+                      <div class="kv-key-sub">阿里云百炼平台申请，sk-... 开头</div>
+                    </div>
+                    <div class="kv-value">
+                      <input id="vision-api-key" type="password" class="form-input" placeholder="留空表示不修改" autocomplete="off" />
+                    </div>
+                  </div>
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">模型</div>
+                      <div class="kv-key-sub">选择 Qwen-VL 档位</div>
+                    </div>
+                    <div class="kv-value">
+                      <select id="vision-model" class="form-select">
+                        <option value="qwen-vl-plus">Qwen-VL-Plus（推荐，性价比）</option>
+                        <option value="qwen-vl-max-latest">Qwen-VL-Max（高准确度，贵 2-3 倍）</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div id="vision-status" class="text-sm mt-5"></div>
+                  <div class="action-bar mt-4">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                  </div>
+                </form>
+              </div>
             </div>
 
             <!-- 系统信息 -->

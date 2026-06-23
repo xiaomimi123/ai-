@@ -3156,7 +3156,7 @@ function setConsoleTab(tab) {
   document.querySelectorAll(".console-panel").forEach(p => p.classList.add("hidden"));
   document.getElementById("console-" + tab).classList.remove("hidden");
   switch (tab) {
-    case "llm": loadLLMConfig(); break;
+    case "llm": loadLLMConfig(); loadVisionConfig(); break;
     case "system": loadSystemInfo(); break;
     case "users": loadUsers(); break;
     case "units": loadUnitsConsole(); break;
@@ -3252,6 +3252,53 @@ document.getElementById("llm-test").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = btn._origText || "测试连接";
+  }
+});
+
+// v1.3 Qwen-VL OCR 配置
+async function loadVisionConfig() {
+  try {
+    const cfg = await api("/settings/vision");
+    document.getElementById("vision-enabled").checked = !!cfg.enabled;
+    document.getElementById("vision-api-key").value = "";  // 永不回显明文，留空表示不修改
+    document.getElementById("vision-api-key").placeholder = cfg.api_key
+      ? "✓ 已配置 · 留空表示不修改"
+      : "尚未配置 · 填入 dashscope sk-...";
+    document.getElementById("vision-model").value = cfg.model || "qwen-vl-plus";
+    document.getElementById("vision-status").textContent = "";
+  } catch (e) {
+    console.warn("加载 Vision 配置失败：", e.message);
+  }
+}
+
+document.getElementById("vision-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const status = document.getElementById("vision-status");
+  const newKey = document.getElementById("vision-api-key").value.trim();
+  // 留空表示不修改 api_key：先 GET 现有值，把它带回去（后端是 upsert，全字段必填）
+  let existingKey = "";
+  if (!newKey) {
+    try {
+      const cur = await api("/settings/vision");
+      existingKey = cur.api_key || "";
+    } catch {}
+  }
+  const payload = {
+    enabled: document.getElementById("vision-enabled").checked,
+    api_key: newKey || existingKey,
+    model: document.getElementById("vision-model").value,
+  };
+  try {
+    await api("/settings/vision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    status.innerHTML = `<div class="callout callout-success">✓ 已保存</div>`;
+    setTimeout(() => { status.innerHTML = ""; }, 3000);
+    await loadVisionConfig();
+  } catch (e) {
+    status.innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
   }
 });
 
