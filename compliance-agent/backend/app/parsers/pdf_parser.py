@@ -28,5 +28,5 @@ def parse_pdf(path: str) -> ParsedDocument:
     doc.close()
 
     full = "\n".join(texts)
-    metadata = {"file_name": Path(path).name, "parser": "pdf", "scanned": len(full.strip()) < 20}
+    metadata = {"file_name": Path(path).name, "parser": "pdf", "scanned": len(full.strip()) < 10}
     return ParsedDocument(text=full, page_blocks=blocks, tables=[], metadata=metadata)
