@@ -100,8 +100,8 @@ def upload_material(db: Session, task: AuditTask, *,
     dest = Path(settings.storage_dir) / safe
     dest.write_bytes(content)
 
-    # 解析 + 自动抽取 key_elements
-    parsed = parse(str(dest))
+    # 解析 + 自动抽取 key_elements（v1.3: 传 db 让扫描件 PDF 自动 OCR）
+    parsed = parse(str(dest), db=db)
     ke = parsed.key_elements
 
     # 校验指标存在
