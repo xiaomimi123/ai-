@@ -149,7 +149,21 @@ def test_vision_connection(req: VisionTestIn,
             }],
             timeout=30,
         )
-        # 取响应文本
+        # dashscope 失败时不抛异常，而是返回 status_code != 200 + message 错误描述
+        status_code = getattr(response, "status_code", None)
+        if status_code is not None and status_code != 200:
+            code = getattr(response, "code", "") or ""
+            msg = getattr(response, "message", "") or ""
+            return {
+                "success": False,
+                "error": f"[HTTP {status_code}] {code}: {msg}".strip(),
+            }
+        if not getattr(response, "output", None):
+            return {
+                "success": False,
+                "error": f"响应为空（response={str(response)[:200]}）",
+            }
+        # 成功路径：取响应文本
         content = response.output.choices[0].message.content
         if isinstance(content, list):
             content = "".join(
@@ -158,4 +172,4 @@ def test_vision_connection(req: VisionTestIn,
         reply = str(content)[:80].strip()
         return {"success": True, "model": model, "preview": reply}
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:300]}
+        return {"success": False, "error": f"{type(exc).__name__}: {str(exc)[:280]}"}

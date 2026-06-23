@@ -152,10 +152,11 @@ def test_ocr_pdf_returns_none_when_all_pages_fail(tmp_path):
     assert ocr_pdf_first_and_last_page(str(pdf), client) is None
 
 
-def _fake_response(payload: dict):
+def _fake_response(payload: dict, status_code: int = 200):
     """模拟 dashscope MultiModalConversation.call 的返回结构。"""
     import json
     r = MagicMock()
+    r.status_code = status_code  # 真实 dashscope 成功返回 200
     r.output.choices = [MagicMock()]
     r.output.choices[0].message.content = json.dumps(payload, ensure_ascii=False)
     return r

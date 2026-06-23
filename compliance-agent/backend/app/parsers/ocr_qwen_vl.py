@@ -68,6 +68,15 @@ def _extract_content_from_response(response: Any) -> str:
 
     兼容 content 是 str 或 list[dict]（dashscope 不同版本返回不同）。
     """
+    # dashscope 失败时不抛异常，返回 status_code != 200 + None output
+    status_code = getattr(response, "status_code", None)
+    if status_code is not None and status_code != 200:
+        code = getattr(response, "code", "") or ""
+        msg = getattr(response, "message", "") or ""
+        print(f"[ocr] dashscope 返回错误 HTTP {status_code} {code}: {msg}")
+        return ""
+    if not getattr(response, "output", None):
+        return ""
     content = response.output.choices[0].message.content
     if isinstance(content, list):
         content = "".join(
