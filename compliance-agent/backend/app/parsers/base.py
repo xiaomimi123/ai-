@@ -25,6 +25,9 @@ class KeyElements:
     issue_year: Optional[int] = None    # 年度（int）
     document_number: str = ""           # 文件编号 如「XXX发[2025]5号」
     is_draft: bool = False              # 是否为草稿/征求意见稿
+    # v1.3 新增（OCR 提取的章上文字 + 发文机关）
+    seal_text: str = ""
+    issuer: str = ""
 
 
 @dataclass
