@@ -3274,6 +3274,7 @@ async function loadVisionConfig() {
 document.getElementById("vision-form").addEventListener("submit", async ev => {
   ev.preventDefault();
   const status = document.getElementById("vision-status");
+  const submitBtn = ev.target.querySelector('button[type="submit"]');
   const newKey = document.getElementById("vision-api-key").value.trim();
   // 留空表示不修改 api_key：先 GET 现有值，把它带回去（后端是 upsert，全字段必填）
   let existingKey = "";
@@ -3288,17 +3289,59 @@ document.getElementById("vision-form").addEventListener("submit", async ev => {
     api_key: newKey || existingKey,
     model: document.getElementById("vision-model").value,
   };
+  status.innerHTML = `<div class="callout callout-info">正在保存…</div>`;
+  if (submitBtn) submitBtn.disabled = true;
   try {
     await api("/settings/vision", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    status.innerHTML = `<div class="callout callout-success">✓ 已保存</div>`;
-    setTimeout(() => { status.innerHTML = ""; }, 3000);
+    const keyState = payload.api_key ? "已配置 API key" : "未配 key";
+    const enState = payload.enabled ? "已启用" : "未启用";
+    status.innerHTML = `<div class="callout callout-success">✓ Vision 配置已保存 · ${esc(enState)} · ${esc(keyState)}</div>`;
+    toast(`✓ Qwen-VL 配置已保存（${enState}）`, "success");
     await loadVisionConfig();
   } catch (e) {
+    status.innerHTML = `<div class="callout callout-error">✗ 保存失败：${esc(e.message)}</div>`;
+    toast(`✗ Qwen-VL 保存失败：${e.message}`, "error");
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+});
+
+document.getElementById("vision-test").addEventListener("click", async () => {
+  const status = document.getElementById("vision-status");
+  const btn = document.getElementById("vision-test");
+  const newKey = document.getElementById("vision-api-key").value.trim();
+  const model = document.getElementById("vision-model").value;
+  // 新 key 优先；为空时后端会从 DB 取
+  const payload = { api_key: newKey, model };
+  status.innerHTML = `<div class="callout callout-info">正在调 Qwen-VL 测试（5-15 秒）…</div>`;
+  toast("正在测试 Qwen-VL 连接…");
+  btn.disabled = true;
+  btn._origText = btn._origText || btn.textContent;
+  btn.textContent = "测试中…";
+  try {
+    const r = await api("/settings/vision/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (r.success) {
+      const preview = r.preview ? ` · 模型回答："${esc(r.preview)}"` : "";
+      status.innerHTML = `<div class="callout callout-success">✓ Qwen-VL 连接成功 · ${esc(r.model || model)}${preview}</div>`;
+      toast(`✓ Qwen-VL 连接成功`, "success");
+    } else {
+      status.innerHTML = `<div class="callout callout-error">✗ 连接失败：${esc(r.error || "未知错误")}</div>`;
+      toast(`✗ Qwen-VL 测试失败：${r.error}`, "error");
+    }
+  } catch (e) {
     status.innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
+    toast(`✗ ${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = btn._origText || "测试连接";
   }
 });
 
