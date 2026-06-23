@@ -132,12 +132,12 @@ def test_vision_connection(req: VisionTestIn,
         return {"success": False, "error": "请先填入 dashscope API key"}
     try:
         import dashscope
+        import fitz  # PyMuPDF：临时生成 16x16 白色 PNG（Qwen-VL 要求高/宽 > 10）
+        import base64 as _b64
         dashscope.api_key = api_key
-        # 1x1 白色 PNG（base64）—— 最小测试图，不耗 token
-        tiny_png_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0"
-            "lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII="
-        )
+        _pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 16, 16))
+        _pix.clear_with(255)  # 全白
+        tiny_png_b64 = _b64.b64encode(_pix.tobytes("png")).decode()
         response = dashscope.MultiModalConversation.call(
             model=model,
             messages=[{
