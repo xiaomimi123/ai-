@@ -72,3 +72,35 @@ def update_llm_config(
         _set(db, KEY_LLM_THINKING_MODE, thinking_mode.strip())
     db.commit()
     return get_llm_config(db)
+
+
+# ============================================================
+# v1.3 视觉模型（Qwen-VL）配置：用于扫描件 PDF OCR
+# ============================================================
+def get_vision_config(db: Session) -> dict:
+    """读 Qwen-VL OCR 配置。未保存过 → 默认 disabled + 空 key + qwen-vl-plus。"""
+    keys = ["vision_enabled", "vision_api_key", "vision_model"]
+    rows = db.query(AppSetting).filter(AppSetting.key.in_(keys)).all()
+    cfg = {r.key: r.value for r in rows}
+    return {
+        "enabled": (cfg.get("vision_enabled") or "false").lower() == "true",
+        "api_key": cfg.get("vision_api_key", ""),
+        "model": cfg.get("vision_model", "qwen-vl-plus"),
+    }
+
+
+def save_vision_config(db: Session, enabled: bool,
+                       api_key: str, model: str) -> None:
+    """upsert 3 个 key 到 AppSetting。"""
+    pairs = [
+        ("vision_enabled", "true" if enabled else "false"),
+        ("vision_api_key", api_key),
+        ("vision_model", model or "qwen-vl-plus"),
+    ]
+    for key, val in pairs:
+        row = db.query(AppSetting).filter_by(key=key).first()
+        if row:
+            row.value = val
+        else:
+            db.add(AppSetting(key=key, value=val))
+    db.commit()
