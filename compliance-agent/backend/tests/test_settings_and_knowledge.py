@@ -170,3 +170,32 @@ def test_unauth_cannot_create_indicator():
     with TestClient(app) as c:
         r = c.post("/api/indicators", json={"indicator_code": "X", "name": "x"})
         assert r.status_code == 401
+
+
+def test_get_vision_default_empty(auth_headers):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        r = c.get("/api/settings/vision", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["enabled"] is False
+        assert "api_key" in body  # 默认空串
+        assert body["model"] == "qwen-vl-plus"
+
+
+def test_save_vision_roundtrip(auth_headers):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        r = c.post("/api/settings/vision", headers=auth_headers, json={
+            "enabled": True, "api_key": "sk-vision-test",
+            "model": "qwen-vl-max-latest",
+        })
+        assert r.status_code == 200, r.text
+        # 再 GET 一次验证
+        r2 = c.get("/api/settings/vision", headers=auth_headers)
+        body = r2.json()
+        assert body["enabled"] is True
+        assert body["api_key"] == "sk-vision-test"
+        assert body["model"] == "qwen-vl-max-latest"

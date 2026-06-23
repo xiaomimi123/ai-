@@ -76,3 +76,33 @@ def test_llm_connection(db: Session = Depends(get_db),
         "client": client_cls,
         "preview": (result or "")[:200],
     }
+
+
+# ============================================================
+# v1.3 视觉模型（Qwen-VL OCR）配置 GET/POST
+# ============================================================
+from pydantic import BaseModel as _BaseModel
+
+
+class VisionConfigIn(_BaseModel):
+    enabled: bool
+    api_key: str
+    model: str = "qwen-vl-plus"
+
+
+@settings_router.get("/vision", response_model=dict)
+def get_vision_settings(db: Session = Depends(get_db),
+                        _: User = Depends(require_admin)):
+    """读取 Qwen-VL OCR 配置（管理员）。"""
+    return settings_service.get_vision_config(db)
+
+
+@settings_router.post("/vision", response_model=dict)
+def save_vision_settings(req: VisionConfigIn,
+                         db: Session = Depends(get_db),
+                         admin: User = Depends(require_admin)):
+    """保存 Qwen-VL OCR 配置（管理员）。"""
+    settings_service.save_vision_config(
+        db, enabled=req.enabled, api_key=req.api_key, model=req.model,
+    )
+    return {"ok": True}
