@@ -1579,12 +1579,15 @@ document.getElementById("material-upload-form").addEventListener("submit", async
     });
     if (!r.ok) throw new Error(await r.text());
     const body = await r.json();
-    // v1.4 文件去重：复用时显示节省量
-    const tip = body.reused
-      ? `✓ 已上传并自动抽取 key_elements · 识别为重复文件，复用副本，省 ${body.reused_size_mb} MB`
-      : `✓ 已上传并自动抽取 key_elements`;
+    // v1.5 显示绑定置信度；v1.4 显示去重节省量
+    const conf = body.binding_confidence || "none";
+    const confLabel = {high: "高准确度", medium: "中等准确度", none: "未自动绑定"}[conf];
+    const reusedTip = body.reused ? `（复用副本，省 ${body.reused_size_mb} MB）` : "";
+    const tip = body.indicator_id
+      ? `✓ 已上传 · 绑到指标（${confLabel}）${reusedTip}`
+      : `✓ 已上传 · 未自动绑定（请手动指定指标）${reusedTip}`;
     status.innerHTML = `<div class="callout callout-success">${tip}</div>`;
-    if (body.reused) toast(`✓ 复用已有副本，省 ${body.reused_size_mb} MB`, "success");
+    toast(tip, "success");
     fileInput.value = "";
     await loadTaskWorkspace(State.taskId);
   } catch (e) {
@@ -1663,6 +1666,9 @@ async function runMaterialFolderUpload() {
       try {
         const fd = new FormData();
         fd.append("file", file);
+        if (file.webkitRelativePath) {
+          fd.append("relative_path", file.webkitRelativePath);
+        }
         // 不绑定 indicator_id → 归入共享池
         const tok = getToken();
         const r = await fetch(`${API}/tasks/${State.taskId}/materials`, {
@@ -1670,13 +1676,15 @@ async function runMaterialFolderUpload() {
         });
         if (!r.ok) throw new Error(await r.text());
         const body = await r.json();
+        // v1.5 显示置信度；v1.4 显示复用情况
+        const conf = body.binding_confidence || "none";
+        const confLabel = {high: "高", medium: "中", none: "未绑"}[conf];
         icon.innerHTML = '<span style="color:var(--green)">✓</span>';
-        // v1.4 文件去重：复用时单独标识 + 累加节省量
         if (body.reused) {
-          msg.textContent = `✓ 复用（省 ${body.reused_size_mb} MB）`;
+          msg.textContent = `✓ ${confLabel} · 复用（省 ${body.reused_size_mb} MB）`;
           MD_FOLDER.totalSavedMb = (MD_FOLDER.totalSavedMb || 0) + (body.reused_size_mb || 0);
         } else {
-          msg.textContent = "✓ 已上传";
+          msg.textContent = `✓ ${confLabel}`;
         }
         ok++;
       } catch (e) {

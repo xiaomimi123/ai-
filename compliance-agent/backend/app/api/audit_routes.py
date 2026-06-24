@@ -176,6 +176,7 @@ async def upload_material(
     task_id: int,
     file: UploadFile = File(...),
     indicator_id: Optional[int] = Form(None),
+    relative_path: str = Form(""),               # v1.5 新增
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -188,13 +189,17 @@ async def upload_material(
         content = await file.read()
         material = audit_service.upload_material(
             db, task, file_name=file.filename or "untitled",
-            content=content, indicator_id=indicator_id, user=user,
+            content=content, indicator_id=indicator_id,
+            relative_path=relative_path,                 # v1.5 新增
+            user=user,
         )
     except UnsupportedFormatError as exc:
         raise HTTPException(400, str(exc))
     out = MaterialOut.model_validate(material).model_dump()
     out["reused"] = getattr(material, "_reused", False)
     out["reused_size_mb"] = getattr(material, "_reused_size_mb", 0.0)
+    out["binding_confidence"] = getattr(material, "_binding_confidence", "none")
+    out["binding_source"] = getattr(material, "_binding_source", "none")
     return out
 
 

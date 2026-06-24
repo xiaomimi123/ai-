@@ -276,6 +276,9 @@ class MaterialOut(BaseModel):
     # v1.4 文件去重：上传时是否复用已有物理文件 / 节省的 MB
     reused: bool = False
     reused_size_mb: float = 0.0
+    # v1.5 新增
+    binding_confidence: str = "none"     # none | medium | high
+    binding_source: str = "none"          # path+keyword | path+protocol_fallback | keyword_global | none
 
     class Config:
         from_attributes = True
