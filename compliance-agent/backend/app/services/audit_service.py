@@ -363,19 +363,31 @@ def delete_task(db: Session, task_id: int, user: User) -> None:
     if not task:
         raise HTTPException(404, "任务不存在")
 
-    # 清理物理文件
+    # v1.4 引用计数：被其它 Material 引用的物理文件不删
+    deleted_physical, kept_physical = 0, 0
     for m in list(task.materials):
-        if m.storage_path and os.path.exists(m.storage_path):
+        if not m.storage_path:
+            continue
+        if m.content_hash:
+            other_refs = (db.query(Material)
+                            .filter(Material.content_hash == m.content_hash,
+                                    Material.id != m.id)
+                            .count())
+            if other_refs > 0:
+                kept_physical += 1
+                continue
+        if os.path.exists(m.storage_path):
             try:
                 os.remove(m.storage_path)
-            except OSError as exc:
+                deleted_physical += 1
+            except Exception as exc:
                 print(f"[task.delete] 清理文件失败 {m.storage_path}: {exc}")
 
     task_name = task.name
     db.delete(task)  # ← 级联删 materials / findings
     log_action(db, user, "task.delete",
                target_type="task", target_id=task_id,
-               detail=f"删除任务「{task_name}」")
+               detail=f"删除任务「{task_name}」(物理删除:{deleted_physical} 保留:{kept_physical})")
     db.commit()
 
 

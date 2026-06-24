@@ -127,3 +127,60 @@ def test_upload_dedup_handles_missing_physical_file(auth_headers):
         assert m2.get("reused", False) is False
         path2 = _material_path(None, m2["id"])
         assert Path(path2).exists()
+
+
+def test_delete_task_keeps_physical_when_other_refs(auth_headers):
+    """A、B 两任务上传同份内容 -> 删 A -> 物理文件仍存在（B 还引用）。"""
+    from app.main import app
+    from pathlib import Path
+    with TestClient(app) as c:
+        t1 = _setup_task(c, auth_headers, "6A")
+        t2 = _setup_task(c, auth_headers, "6B")
+        content = b"keep alive content " + b"k" * 500
+        m1 = _upload(c, auth_headers, t1, "k.txt", content)
+        m2 = _upload(c, auth_headers, t2, "k.txt", content)
+        path = _material_path(None, m1["id"])
+        # 删 t1
+        r = c.delete(f"/api/tasks/{t1}", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        # 物理文件应仍在（t2 还引用）
+        assert Path(path).exists(), \
+            f"删 t1 后物理文件 {path} 不该被删（t2 还引用）"
+
+
+def test_delete_task_removes_physical_when_last_ref(auth_headers):
+    """A、B 同份内容 -> 先删 A 留物理；再删 B -> 物理被清。"""
+    from app.main import app
+    from pathlib import Path
+    with TestClient(app) as c:
+        t1 = _setup_task(c, auth_headers, "7A")
+        t2 = _setup_task(c, auth_headers, "7B")
+        content = b"last ref content " + b"l" * 500
+        m1 = _upload(c, auth_headers, t1, "l.txt", content)
+        m2 = _upload(c, auth_headers, t2, "l.txt", content)
+        path = _material_path(None, m1["id"])
+        c.delete(f"/api/tasks/{t1}", headers=auth_headers)
+        assert Path(path).exists()  # 还有 t2 引用
+        c.delete(f"/api/tasks/{t2}", headers=auth_headers)
+        assert not Path(path).exists(), \
+            f"删完最后一个引用后物理文件 {path} 应被清"
+
+
+def test_delete_task_legacy_material_no_hash(auth_headers):
+    """content_hash 为空（v1.4 前数据）-> 按老逻辑直接删，不查引用计数。"""
+    from app.main import app
+    from pathlib import Path
+    with TestClient(app) as c:
+        t1 = _setup_task(c, auth_headers, "8A")
+        content = b"legacy no hash material"
+        m1 = _upload(c, auth_headers, t1, "legacy.txt", content)
+        path = _material_path(None, m1["id"])
+        # 模拟 v1.4 前数据：手动清空 content_hash
+        from app.models import SessionLocal, Material
+        with SessionLocal() as s:
+            mat = s.get(Material, m1["id"])
+            mat.content_hash = ""
+            s.commit()
+        # 删 -> 应当直接删物理文件（老逻辑）
+        c.delete(f"/api/tasks/{t1}", headers=auth_headers)
+        assert not Path(path).exists()
