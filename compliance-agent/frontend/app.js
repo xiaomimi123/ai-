@@ -1746,11 +1746,45 @@ document.getElementById("tw-run-btn").addEventListener("click", async () => {
 // ============================================================
 // Findings 分栏审阅
 // ============================================================
+const _FIC_DIMS = ["真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题", "形式性"];
+const _FIC_DIM_SHORT = {
+  "真实性问题": "真实",
+  "完整性问题": "完整",
+  "合规性问题": "合规",
+  "重复性问题": "重复",
+  "匹配性问题": "匹配",
+  "形式性":     "形式",
+};
+
+function _groupFindingsByIndicator(findings, indicators) {
+  const indMap = new Map();
+  for (const ind of (indicators || [])) indMap.set(ind.id, ind);
+  const groups = new Map();
+  for (const f of findings) {
+    const k = f.indicator_id == null ? "__unbound__" : f.indicator_id;
+    if (!groups.has(k)) {
+      const ind = (k === "__unbound__") ? null : indMap.get(f.indicator_id);
+      groups.set(k, {
+        key: k,
+        indicator: ind,
+        sort_code: ind ? ind.indicator_code : "ZZ",
+        findings: [],
+      });
+    }
+    groups.get(k).findings.push(f);
+  }
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.key === "__unbound__") return 1;
+    if (b.key === "__unbound__") return -1;
+    return a.sort_code.localeCompare(b.sort_code);
+  });
+}
+
 function renderFindings() {
   const d = State.taskDetail;
   const findings = d.findings;
 
-  // V3：按 5 维度批量忽略入口
+  // 顶部维度横切按钮（保留）
   renderFindingBulkActions(findings);
 
   const filtered = findings.filter(f => {
@@ -1772,31 +1806,115 @@ function renderFindings() {
     return;
   }
 
-  listBox.innerHTML = filtered.map(f => {
-    const isActive = f.id === State.activeFindingId;
-    return `
-      <div class="finding-row finding-row-${f.severity} ${isActive ? 'is-active' : ''}" data-id="${f.id}">
-        <div class="finding-row-desc">${esc(f.description.slice(0, 100))}${f.description.length > 100 ? '…' : ''}</div>
-        <div class="finding-row-meta">
-          <span class="chip-risk chip-risk-${f.severity}">${f.severity}</span>
-          <span class="tag">${esc(f.finding_type)}</span>
-          ${reviewBadge(f.review_status)}
-        </div>
-      </div>`;
-  }).join("");
+  const groups = _groupFindingsByIndicator(filtered, State.indicators || []);
+  listBox.innerHTML = groups.map(g => _renderIndicatorCard(g)).join("");
 
-  listBox.querySelectorAll(".finding-row").forEach(row => {
-    row.addEventListener("click", () => {
+  // 卡 header 点击展开/折叠（按钮自身阻止冒泡）
+  listBox.querySelectorAll(".finding-indicator-header").forEach(h => {
+    h.addEventListener("click", e => {
+      if (e.target.closest(".fic-actions")) return;
+      h.parentElement.classList.toggle("is-open");
+    });
+  });
+
+  // 卡内单条 finding 行点击 → 显示详情
+  listBox.querySelectorAll(".fic-finding-row").forEach(row => {
+    row.addEventListener("click", e => {
+      if (e.target.closest(".fic-finding-row-actions")) return;
       const id = parseInt(row.dataset.id);
       State.activeFindingId = id;
-      renderFindings();
+      listBox.querySelectorAll(".fic-finding-row.is-active")
+             .forEach(r => r.classList.remove("is-active"));
+      row.classList.add("is-active");
+      const f = findings.find(x => x.id === id);
+      renderFindingDetail(f);
     });
   });
 
   if (!State.activeFindingId || !filtered.find(f => f.id === State.activeFindingId)) {
     State.activeFindingId = filtered[0].id;
   }
-  renderFindingDetail(filtered.find(f => f.id === State.activeFindingId));
+  // v1.6: 自动展开 active finding 所在卡，避免左侧看似空白
+  const activeFinding = filtered.find(f => f.id === State.activeFindingId);
+  if (activeFinding) {
+    const activeKey = activeFinding.indicator_id == null
+      ? "" : String(activeFinding.indicator_id);
+    const activeCard = listBox.querySelector(
+      `.finding-indicator-card[data-indicator-id="${activeKey}"]`
+    );
+    if (activeCard) activeCard.classList.add("is-open");
+  }
+  renderFindingDetail(activeFinding);
+}
+
+function _renderIndicatorCard(group) {
+  const ind = group.indicator;
+  const fs = group.findings;
+  const title = ind
+    ? `${esc(ind.indicator_code)} ${esc(ind.name)}`
+    : `未绑指标`;
+  const total = fs.length;
+  const pending = fs.filter(f => (f.review_status || "pending") === "pending").length;
+  const allReviewed = pending === 0;
+
+  const dimCounts = {};
+  for (const t of _FIC_DIMS) dimCounts[t] = 0;
+  for (const f of fs) {
+    if (dimCounts[f.finding_type] !== undefined) dimCounts[f.finding_type]++;
+  }
+  const badges = _FIC_DIMS.map(t => {
+    const n = dimCounts[t];
+    const short = _FIC_DIM_SHORT[t];
+    return `<span class="fic-dim-badge dim-${t} ${n === 0 ? 'zero' : ''}">${short} ${n}</span>`;
+  }).join("");
+
+  const indId = ind ? ind.id : null;
+  const actions = pending > 0 ? `
+    <button class="btn btn-ghost"
+            onclick="bulkReviewIndicator(${indId === null ? 'null' : indId}, 'confirmed')"
+            title="把该指标下 ${pending} 条未复核全部确认">✓ 全部确认</button>
+    <button class="btn btn-ghost"
+            onclick="bulkReviewIndicator(${indId === null ? 'null' : indId}, 'ignored')"
+            title="把该指标下 ${pending} 条未复核全部忽略">✗ 全部忽略</button>
+  ` : `<span class="text-muted" style="font-size:12px">✓ 已全部复核</span>`;
+
+  const body = _FIC_DIMS.map(dim => {
+    const rows = fs.filter(f => f.finding_type === dim);
+    if (!rows.length) return "";
+    return `<div class="fic-dim-group">
+      <div class="fic-dim-group-title">${dim}（${rows.length}）</div>
+      ${rows.map(f => _renderFindingRow(f)).join("")}
+    </div>`;
+  }).join("");
+
+  return `<div class="finding-indicator-card ${allReviewed ? 'all-reviewed' : ''}"
+                data-indicator-id="${indId === null ? '' : indId}">
+    <div class="finding-indicator-header">
+      <span class="fic-caret"></span>
+      <span class="fic-title">${title}</span>
+      <span class="fic-count">共 ${total} 条 · 待复核 <span class="pending-num">${pending}</span></span>
+      <span class="fic-dim-badges">${badges}</span>
+      <span class="fic-actions">${actions}</span>
+    </div>
+    <div class="finding-indicator-body">${body}</div>
+  </div>`;
+}
+
+function _renderFindingRow(f) {
+  const isActive = f.id === State.activeFindingId;
+  const desc = esc(f.description.slice(0, 100)) + (f.description.length > 100 ? '…' : '');
+  const reviewed = (f.review_status || "pending") !== "pending";
+  return `<div class="fic-finding-row ${isActive ? 'is-active' : ''}" data-id="${f.id}">
+    <span class="chip-risk chip-risk-${f.severity}">${f.severity}</span>
+    <span class="fic-finding-desc">${desc}</span>
+    ${reviewBadge(f.review_status)}
+    <span class="fic-finding-row-actions">
+      ${reviewed ? '' : `
+        <button class="btn-mini" onclick="event.stopPropagation(); reviewFindingInline(${f.id}, 'confirmed')" title="确认">✓</button>
+        <button class="btn-mini" onclick="event.stopPropagation(); reviewFindingInline(${f.id}, 'ignored')" title="忽略">✗</button>
+      `}
+    </span>
+  </div>`;
 }
 
 function reviewBadge(s) {
@@ -1819,8 +1937,7 @@ function rectifyBadge(s) {
   return `<span class="${cls}">${label}</span>`;
 }
 
-// V3：5 维度批量忽略 — 一键把同类未复核 finding 全部 ignored
-const _BULK_DIMS = ["真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题"];
+// V3：5 维度批量忽略 — 一键把同类未复核 finding 全部 ignored（复用 _FIC_DIMS）
 
 function renderFindingBulkActions(findings) {
   const bar = document.getElementById("finding-bulk-actions");
@@ -1828,7 +1945,7 @@ function renderFindingBulkActions(findings) {
   // 统计每个维度的"未复核"数量
   const pending = findings.filter(f => (f.review_status || "pending") === "pending");
   const counts = {};
-  for (const t of _BULK_DIMS) counts[t] = 0;
+  for (const t of _FIC_DIMS) counts[t] = 0;
   for (const f of pending) {
     if (counts[f.finding_type] !== undefined) counts[f.finding_type]++;
   }
@@ -1837,7 +1954,7 @@ function renderFindingBulkActions(findings) {
     bar.innerHTML = `<span class="text-muted">✓ 所有疑点已复核</span>`;
     return;
   }
-  const chips = _BULK_DIMS
+  const chips = _FIC_DIMS
     .filter(t => counts[t] > 0)
     .map(t => `<button class="btn btn-ghost btn-sm" style="font-size:12px"
                        onclick="bulkIgnoreFindings('${t}')"
@@ -1849,22 +1966,90 @@ function renderFindingBulkActions(findings) {
 
 window.bulkIgnoreFindings = async function(dim) {
   if (!confirm(`确定把所有「${dim}」未复核疑点一键标为"已忽略"？\n\n忽略后这类问题不再扣分。`)) return;
-  const targets = State.taskDetail.findings.filter(
+  const pendingCount = State.taskDetail.findings.filter(
     f => f.finding_type === dim && (f.review_status || "pending") === "pending"
-  );
-  if (!targets.length) { toast("没有未复核的此类条目"); return; }
-  toast(`批量处理 ${targets.length} 条…`);
-  let ok = 0;
-  for (const f of targets) {
-    try {
-      await api(`/findings/${f.id}/review`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ignored", note: `批量忽略：${dim}` }),
-      });
-      ok++;
-    } catch (e) { console.warn("ignore failed", f.id, e.message); }
+  ).length;
+  if (!pendingCount) { toast("没有未复核的此类条目"); return; }
+  toast(`批量处理 ${pendingCount} 条…`);
+  try {
+    const resp = await api(`/tasks/${State.taskId}/findings/batch-review`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "ignored",
+        note: `批量忽略：${dim}`,
+        finding_type: dim,
+        only_pending: true,
+      }),
+    });
+    toast(`✓ 已忽略 ${resp.updated} 条「${dim}」`, "success");
+  } catch (e) {
+    console.error("批量忽略失败", e);
+    toast(`批量忽略失败：${e.message}`, "error");
+    return;
   }
-  toast(`✓ 已忽略 ${ok} 条「${dim}」`, "success");
+  await loadTaskWorkspace(State.taskId);
+};
+
+// v1.6：指标级批量复核（卡 header 上的 [全部确认 / 全部忽略] 按钮）
+window.bulkReviewIndicator = async function(indicatorId, status) {
+  const verb = status === "confirmed" ? "确认" : "忽略";
+  const findings = State.taskDetail.findings.filter(f => {
+    const sameInd = indicatorId === null
+      ? (f.indicator_id == null)
+      : (f.indicator_id === indicatorId);
+    return sameInd && (f.review_status || "pending") === "pending";
+  });
+  if (!findings.length) { toast("该指标已无未复核条目"); return; }
+  const indLabel = indicatorId === null ? "未绑指标" : `指标 ${indicatorId}`;
+  if (!confirm(`确定把「${indLabel}」下 ${findings.length} 条未复核疑点一键${verb}？`)) return;
+  toast(`批量${verb} ${findings.length} 条…`);
+  try {
+    if (indicatorId === null) {
+      // 后端 batch-review 必须传 indicator_id 或 finding_type 之一；
+      // 未绑指标 → 退化为 N 次串行 PATCH（罕见场景）
+      let ok = 0;
+      for (const f of findings) {
+        try {
+          await api(`/findings/${f.id}/review`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status, note: `批量${verb}：未绑指标` }),
+          });
+          ok++;
+        } catch (e) { console.warn("review fail", f.id, e.message); }
+      }
+      toast(`✓ 已${verb} ${ok} 条`, "success");
+    } else {
+      const resp = await api(`/tasks/${State.taskId}/findings/batch-review`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status, note: `批量${verb}：指标级`,
+          indicator_id: indicatorId, only_pending: true,
+        }),
+      });
+      toast(`✓ 已${verb} ${resp.updated} 条`, "success");
+    }
+  } catch (e) {
+    console.error("批量复核失败", e);
+    toast(`批量复核失败：${e.message}`, "error");
+    return;
+  }
+  await loadTaskWorkspace(State.taskId);
+};
+
+// v1.6：单条 finding 行内确认/忽略（卡片二级分组里的小按钮）
+window.reviewFindingInline = async function(findingId, status) {
+  const verb = status === "confirmed" ? "确认" : "忽略";
+  try {
+    await api(`/findings/${findingId}/review`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, note: `行内${verb}` }),
+    });
+    toast(`✓ 已${verb}`, "success");
+  } catch (e) {
+    console.error("review failed", e);
+    toast(`${verb}失败：${e.message}`, "error");
+    return;
+  }
   await loadTaskWorkspace(State.taskId);
 };
 

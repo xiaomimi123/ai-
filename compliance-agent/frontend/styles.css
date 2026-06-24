@@ -1201,3 +1201,84 @@ button { font-family: inherit; }
 .fade-in-2 { animation-delay: 0.06s; }
 .fade-in-3 { animation-delay: 0.1s; }
 .fade-in-4 { animation-delay: 0.14s; }
+
+/* ===== v1.6 finding 按指标聚合卡片 ===== */
+.finding-indicator-card {
+  border: 1px solid var(--c-border, #d8dde6);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+.finding-indicator-card.all-reviewed {
+  opacity: 0.6;
+}
+.finding-indicator-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: #f7f9fc;
+  border-bottom: 1px solid transparent;
+  user-select: none;
+}
+.finding-indicator-header:hover { background: #eef2f8; }
+.finding-indicator-card.is-open .finding-indicator-header {
+  border-bottom-color: var(--c-border, #d8dde6);
+}
+.fic-caret {
+  width: 14px; flex: 0 0 14px; color: #6b7280;
+  text-align: center;
+  font-size: 0;
+}
+.fic-caret::before { content: "▶"; font-size: 12px; }
+.finding-indicator-card.is-open .fic-caret::before { content: "▼"; }
+.fic-title {
+  flex: 1 1 auto; font-weight: 600; color: #1f2937;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fic-count {
+  font-size: 12px; color: #6b7280; flex: 0 0 auto;
+}
+.fic-count .pending-num { color: #dc2626; font-weight: 600; }
+.fic-dim-badges {
+  display: flex; gap: 4px; flex: 0 0 auto;
+}
+.fic-dim-badge {
+  font-size: 11px; padding: 1px 6px; border-radius: 3px;
+  background: #e5e7eb; color: #374151;
+}
+.fic-dim-badge.dim-真实性问题 { background: #fed7aa; color: #9a3412; }
+.fic-dim-badge.dim-完整性问题 { background: #bfdbfe; color: #1e3a8a; }
+.fic-dim-badge.dim-合规性问题 { background: #fecaca; color: #991b1b; }
+.fic-dim-badge.dim-重复性问题 { background: #e5e7eb; color: #374151; }
+.fic-dim-badge.dim-匹配性问题 { background: #ddd6fe; color: #5b21b6; }
+.fic-dim-badge.dim-形式性 { background: #cffafe; color: #155e75; }
+.fic-dim-badge.zero { opacity: 0.4; }
+.fic-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.fic-actions .btn { font-size: 12px; padding: 3px 10px; }
+.finding-indicator-body {
+  display: none; padding: 8px 14px 12px;
+}
+.finding-indicator-card.is-open .finding-indicator-body { display: block; }
+.fic-dim-group {
+  margin: 8px 0;
+}
+.fic-dim-group-title {
+  font-size: 12px; color: #6b7280; font-weight: 600; margin-bottom: 4px;
+}
+.fic-finding-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 4px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.fic-finding-row:hover { background: #f3f4f6; }
+.fic-finding-row.is-active { background: #eef2ff; border-color: #818cf8; }
+.fic-finding-desc { flex: 1 1 auto; font-size: 13px; color: #1f2937; }
+.fic-finding-row-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.fic-finding-row-actions .btn-mini {
+  font-size: 11px; padding: 2px 6px; border-radius: 3px;
+  border: 1px solid #d1d5db; background: #fff; cursor: pointer;
+}
+.fic-finding-row-actions .btn-mini:hover { background: #f3f4f6; }

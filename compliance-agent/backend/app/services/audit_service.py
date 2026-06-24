@@ -31,6 +31,15 @@ from app.models import (
 from app.parsers import parse, SUPPORTED_EXTENSIONS
 from app.parsers.dispatcher import UnsupportedFormatError
 
+# v1.6: 5 维度 finding_type 允许集 — 用于批量复核接口校验
+_VALID_FINDING_TYPES = (
+    "真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题",
+    "形式性",  # v1.5 形式审查规则引擎产出
+)
+
+# v1.6: 复核状态合法值（review_finding / batch_review_findings 共用）
+_VALID_REVIEW_STATUSES = ("confirmed", "ignored", "adjusted")
+
 
 # ============================================================
 # 单位管理
@@ -321,7 +330,7 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
 # ============================================================
 def review_finding(db: Session, finding_id: int, status: str,
                    note: str, user: User) -> Finding:
-    if status not in ("confirmed", "ignored", "adjusted"):
+    if status not in _VALID_REVIEW_STATUSES:
         raise HTTPException(400, f"无效复核状态：{status}")
     finding = db.get(Finding, finding_id)
     if not finding:
@@ -335,6 +344,66 @@ def review_finding(db: Session, finding_id: int, status: str,
                detail=f"标注为 {status}：{note[:200]}")
     db.commit(); db.refresh(finding)
     return finding
+
+
+def batch_review_findings(
+    db: Session,
+    task_id: int,
+    status: str,
+    note: str,
+    user: User,
+    indicator_id: Optional[int] = None,
+    finding_type: Optional[str] = None,
+    only_pending: bool = True,
+) -> dict:
+    """v1.6：按 indicator_id / finding_type 批量复核同任务下的 finding。
+
+    - indicator_id 与 finding_type 取交集
+    - 至少一个筛选条件必须传，否则 400（防误操作）
+    - only_pending=True 时跳过已复核条目（计入 skipped）
+    - 一条 audit log 记录批量操作（含筛选条件 + updated 计数）
+    """
+    if status not in _VALID_REVIEW_STATUSES:
+        raise HTTPException(400, f"无效复核状态：{status}")
+    if indicator_id is None and finding_type is None:
+        raise HTTPException(400, "indicator_id 与 finding_type 至少传一个")
+    if finding_type is not None and finding_type not in _VALID_FINDING_TYPES:
+        raise HTTPException(400, f"无效 finding_type：{finding_type}")
+
+    task = db.get(AuditTask, task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+
+    q = db.query(Finding).filter(Finding.task_id == task_id)
+    if indicator_id is not None:
+        q = q.filter(Finding.indicator_id == indicator_id)
+    if finding_type is not None:
+        q = q.filter(Finding.finding_type == finding_type)
+
+    candidates = q.all()
+    updated = 0
+    skipped = 0
+    now = datetime.utcnow()
+    clean_note = (note or "").strip()
+    for f in candidates:
+        if only_pending and f.review_status != "pending":
+            skipped += 1
+            continue
+        f.review_status = status
+        f.review_note = clean_note
+        f.reviewer_id = user.id
+        f.reviewed_at = now
+        updated += 1
+
+    log_action(
+        db, user, "finding.batch_review",
+        target_type="task", target_id=task_id,
+        detail=(f"status={status} indicator_id={indicator_id} "
+                f"finding_type={finding_type} candidates={len(candidates)} "
+                f"updated={updated} skipped={skipped}"),
+    )
+    db.commit()
+    return {"updated": updated, "skipped": skipped}
 
 
 # ============================================================
