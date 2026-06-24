@@ -96,12 +96,30 @@ def upload_material(db: Session, task: AuditTask, *,
             f"不支持的格式 {ext}（支持 {', '.join(SUPPORTED_EXTENSIONS)}）"
         )
 
-    safe = f"{uuid.uuid4().hex}{ext}"
-    dest = Path(settings.storage_dir) / safe
-    dest.write_bytes(content)
+    # ---- v1.4 文件去重：先算 hash，再查 DB 看物理文件能否复用 ----
+    import hashlib as _hashlib
+    content_hash = _hashlib.md5(content).hexdigest()
+    reused = False
+    reused_size_mb = 0.0
+    existing = (db.query(Material)
+                  .filter(Material.content_hash == content_hash,
+                          Material.content_hash != "")
+                  .first())
+    if existing and existing.storage_path \
+            and Path(existing.storage_path).exists():
+        # 复用：不写新物理文件
+        dest_path = existing.storage_path
+        reused = True
+        reused_size_mb = round(len(content) / (1024 * 1024), 2)
+    else:
+        # 首次或物理文件丢失 → 按现规则落盘
+        safe = f"{uuid.uuid4().hex}{ext}"
+        dest = Path(settings.storage_dir) / safe
+        dest.write_bytes(content)
+        dest_path = str(dest)
 
     # 解析 + 自动抽取 key_elements（v1.3: 传 db 让扫描件 PDF 自动 OCR）
-    parsed = parse(str(dest), db=db)
+    parsed = parse(dest_path, db=db)
     ke = parsed.key_elements
 
     # 校验指标存在
@@ -120,17 +138,16 @@ def upload_material(db: Session, task: AuditTask, *,
             indicator_id = auto.id
             indicator = auto
 
-    # 跨任务材料查重指纹：MD5(原始字节) + MD5(前 5000 字解析文本归一化)
-    import hashlib, re as _re
-    content_hash = hashlib.md5(content).hexdigest()
+    # 跨任务材料查重指纹：MD5(前 5000 字解析文本归一化)
+    import re as _re
     norm_text = _re.sub(r"\s+", "", (parsed.text or "")[:5000])
-    content_fp = hashlib.md5(norm_text.encode("utf-8")).hexdigest() if norm_text else ""
+    content_fp = _hashlib.md5(norm_text.encode("utf-8")).hexdigest() if norm_text else ""
 
     material = Material(
         task_id=task.id,
         indicator_id=indicator_id,
         file_name=file_name,
-        storage_path=str(dest),
+        storage_path=dest_path,
         file_type=ext.lstrip("."),
         is_scanned=parsed.metadata.get("scanned", False),
         key_elements=json.dumps(ke.__dict__, ensure_ascii=False, default=str),
@@ -139,11 +156,17 @@ def upload_material(db: Session, task: AuditTask, *,
         content_fingerprint=content_fp,
     )
     db.add(material); db.flush()
+    detail = (f"任务 #{task.id} 上传材料 {file_name} "
+              f"指标={indicator.indicator_code if indicator else '未绑定'}")
+    if reused:
+        detail += f"（复用文件，省 {reused_size_mb} MB）"
     log_action(db, user, "material.upload",
                target_type="material", target_id=material.id,
-               detail=f"任务 #{task.id} 上传材料 {file_name} "
-                      f"指标={indicator.indicator_code if indicator else '未绑定'}")
+               detail=detail)
     db.commit(); db.refresh(material)
+    # v1.4: 内存属性传给 API 层（不入 DB）
+    material._reused = reused
+    material._reused_size_mb = reused_size_mb
     return material
 
 
