@@ -1989,6 +1989,69 @@ window.bulkIgnoreFindings = async function(dim) {
   await loadTaskWorkspace(State.taskId);
 };
 
+// v1.6：指标级批量复核（卡 header 上的 [全部确认 / 全部忽略] 按钮）
+window.bulkReviewIndicator = async function(indicatorId, status) {
+  const verb = status === "confirmed" ? "确认" : "忽略";
+  const findings = State.taskDetail.findings.filter(f => {
+    const sameInd = indicatorId === null
+      ? (f.indicator_id == null)
+      : (f.indicator_id === indicatorId);
+    return sameInd && (f.review_status || "pending") === "pending";
+  });
+  if (!findings.length) { toast("该指标已无未复核条目"); return; }
+  const indLabel = indicatorId === null ? "未绑指标" : `指标 ${indicatorId}`;
+  if (!confirm(`确定把「${indLabel}」下 ${findings.length} 条未复核疑点一键${verb}？`)) return;
+  toast(`批量${verb} ${findings.length} 条…`);
+  try {
+    if (indicatorId === null) {
+      // 后端 batch-review 必须传 indicator_id 或 finding_type 之一；
+      // 未绑指标 → 退化为 N 次串行 PATCH（罕见场景）
+      let ok = 0;
+      for (const f of findings) {
+        try {
+          await api(`/findings/${f.id}/review`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status, note: `批量${verb}：未绑指标` }),
+          });
+          ok++;
+        } catch (e) { console.warn("review fail", f.id, e.message); }
+      }
+      toast(`✓ 已${verb} ${ok} 条`, "success");
+    } else {
+      const resp = await api(`/tasks/${State.taskId}/findings/batch-review`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status, note: `批量${verb}：指标级`,
+          indicator_id: indicatorId, only_pending: true,
+        }),
+      });
+      toast(`✓ 已${verb} ${resp.updated} 条`, "success");
+    }
+  } catch (e) {
+    console.error("批量复核失败", e);
+    toast(`批量复核失败：${e.message}`, "error");
+    return;
+  }
+  await loadTaskWorkspace(State.taskId);
+};
+
+// v1.6：单条 finding 行内确认/忽略（卡片二级分组里的小按钮）
+window.reviewFindingInline = async function(findingId, status) {
+  const verb = status === "confirmed" ? "确认" : "忽略";
+  try {
+    await api(`/findings/${findingId}/review`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, note: `行内${verb}` }),
+    });
+    toast(`✓ 已${verb}`, "success");
+  } catch (e) {
+    console.error("review failed", e);
+    toast(`${verb}失败：${e.message}`, "error");
+    return;
+  }
+  await loadTaskWorkspace(State.taskId);
+};
+
 function renderFindingDetail(f) {
   const box = document.getElementById("finding-detail");
   if (!f) {
