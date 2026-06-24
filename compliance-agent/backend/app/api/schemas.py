@@ -320,6 +320,20 @@ class FindingReviewRequest(BaseModel):
     note: str = ""
 
 
+class BatchReviewRequest(BaseModel):
+    """v1.6：按 indicator_id / finding_type 批量复核 finding。"""
+    status: str  # confirmed | ignored | adjusted
+    note: str = ""
+    indicator_id: Optional[int] = None      # 限定该指标下
+    finding_type: Optional[str] = None      # 限定该类型
+    only_pending: bool = True               # True=仅更新 pending 条目（避免覆盖他人复核）
+
+
+class BatchReviewResponse(BaseModel):
+    updated: int
+    skipped: int
+
+
 class FindingRectifyRequest(BaseModel):
     note: str
 
