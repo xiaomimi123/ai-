@@ -192,7 +192,10 @@ async def upload_material(
         )
     except UnsupportedFormatError as exc:
         raise HTTPException(400, str(exc))
-    return material
+    out = MaterialOut.model_validate(material).model_dump()
+    out["reused"] = getattr(material, "_reused", False)
+    out["reused_size_mb"] = getattr(material, "_reused_size_mb", 0.0)
+    return out
 
 
 class MaterialBindRequest(BaseModel):

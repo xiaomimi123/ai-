@@ -273,6 +273,9 @@ class MaterialOut(BaseModel):
     file_type: str
     is_scanned: bool
     key_elements: str
+    # v1.4 文件去重：上传时是否复用已有物理文件 / 节省的 MB
+    reused: bool = False
+    reused_size_mb: float = 0.0
 
     class Config:
         from_attributes = True
