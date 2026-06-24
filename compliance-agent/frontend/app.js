@@ -1578,7 +1578,13 @@ document.getElementById("material-upload-form").addEventListener("submit", async
       method: "POST", headers: { "Authorization": "Bearer " + tok }, body: fd,
     });
     if (!r.ok) throw new Error(await r.text());
-    status.innerHTML = `<div class="callout callout-success">✓ 已上传并自动抽取 key_elements</div>`;
+    const body = await r.json();
+    // v1.4 文件去重：复用时显示节省量
+    const tip = body.reused
+      ? `✓ 已上传并自动抽取 key_elements · 识别为重复文件，复用副本，省 ${body.reused_size_mb} MB`
+      : `✓ 已上传并自动抽取 key_elements`;
+    status.innerHTML = `<div class="callout callout-success">${tip}</div>`;
+    if (body.reused) toast(`✓ 复用已有副本，省 ${body.reused_size_mb} MB`, "success");
     fileInput.value = "";
     await loadTaskWorkspace(State.taskId);
   } catch (e) {
@@ -1663,8 +1669,15 @@ async function runMaterialFolderUpload() {
           method: "POST", headers: { "Authorization": "Bearer " + tok }, body: fd,
         });
         if (!r.ok) throw new Error(await r.text());
+        const body = await r.json();
         icon.innerHTML = '<span style="color:var(--green)">✓</span>';
-        msg.textContent = "✓ 已上传";
+        // v1.4 文件去重：复用时单独标识 + 累加节省量
+        if (body.reused) {
+          msg.textContent = `✓ 复用（省 ${body.reused_size_mb} MB）`;
+          MD_FOLDER.totalSavedMb = (MD_FOLDER.totalSavedMb || 0) + (body.reused_size_mb || 0);
+        } else {
+          msg.textContent = "✓ 已上传";
+        }
         ok++;
       } catch (e) {
         icon.innerHTML = '<span style="color:var(--red)">✗</span>';
@@ -1686,7 +1699,9 @@ async function runMaterialFolderUpload() {
     document.getElementById("mfp-summary").textContent =
       `已取消 · 完成 ${done}/${files.length} · 成功 ${ok} · 失败 ${fail}`;
   } else {
-    toast(`✓ 批量上传完成：${ok} 成功 / ${fail} 失败`, ok > 0 ? "success" : "error");
+    const savedMb = (MD_FOLDER.totalSavedMb || 0).toFixed(2);
+    const savedTip = savedMb > 0 ? `（去重共省 ${savedMb} MB）` : "";
+    toast(`✓ 批量上传完成：${ok} 成功 / ${fail} 失败${savedTip}`, ok > 0 ? "success" : "error");
   }
   await loadTaskWorkspace(State.taskId);
 }
