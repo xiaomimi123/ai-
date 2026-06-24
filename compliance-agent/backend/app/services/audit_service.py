@@ -89,6 +89,7 @@ def create_task(db: Session, *, unit_id: int, name: str, eval_year: int = 2025,
 def upload_material(db: Session, task: AuditTask, *,
                     file_name: str, content: bytes,
                     indicator_id: Optional[int],
+                    relative_path: str = "",       # v1.5 新增
                     user: Optional[User] = None) -> Material:
     ext = Path(file_name).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
@@ -129,14 +130,20 @@ def upload_material(db: Session, task: AuditTask, *,
         if not indicator:
             raise HTTPException(404, f"指标 {indicator_id} 不存在")
 
-    # 自动按文件名/路径关键词绑定到指标（仅当未显式指定时）
+    # 自动绑定（仅当未显式指定时） — v1.5 改用路径感知匹配
+    binding_confidence = "none"
+    binding_source = "none"
     if not indicator_id:
-        from app.services.material_matcher import match_indicator_by_content
+        from app.services.material_matcher import match_indicator_by_path_and_content
         all_inds = db.query(Indicator).all()
-        auto = match_indicator_by_content(file_name, parsed.text or "", all_inds)
+        auto, conf, src = match_indicator_by_path_and_content(
+            relative_path or "", file_name, parsed.text or "", all_inds,
+        )
         if auto:
             indicator_id = auto.id
             indicator = auto
+        binding_confidence = conf
+        binding_source = src
 
     # 跨任务材料查重指纹：MD5(前 5000 字解析文本归一化)
     import re as _re
@@ -167,6 +174,8 @@ def upload_material(db: Session, task: AuditTask, *,
     # v1.4: 内存属性传给 API 层（不入 DB）
     material._reused = reused
     material._reused_size_mb = reused_size_mb
+    material._binding_confidence = binding_confidence   # v1.5 新增
+    material._binding_source = binding_source           # v1.5 新增
     return material
 
 
