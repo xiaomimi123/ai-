@@ -1254,6 +1254,7 @@ button { font-family: inherit; }
 .fic-dim-badge.dim-合规性问题 { background: #fecaca; color: #991b1b; }
 .fic-dim-badge.dim-重复性问题 { background: #e5e7eb; color: #374151; }
 .fic-dim-badge.dim-匹配性问题 { background: #ddd6fe; color: #5b21b6; }
+.fic-dim-badge.dim-形式性 { background: #cffafe; color: #155e75; }
 .fic-dim-badge.zero { opacity: 0.4; }
 .fic-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .fic-actions .btn { font-size: 12px; padding: 3px 10px; }

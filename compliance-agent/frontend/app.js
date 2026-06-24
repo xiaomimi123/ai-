@@ -1746,13 +1746,14 @@ document.getElementById("tw-run-btn").addEventListener("click", async () => {
 // ============================================================
 // Findings 分栏审阅
 // ============================================================
-const _FIC_DIMS = ["真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题"];
+const _FIC_DIMS = ["真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题", "形式性"];
 const _FIC_DIM_SHORT = {
   "真实性问题": "真实",
   "完整性问题": "完整",
   "合规性问题": "合规",
   "重复性问题": "重复",
   "匹配性问题": "匹配",
+  "形式性":     "形式",
 };
 
 function _groupFindingsByIndicator(findings, indicators) {
