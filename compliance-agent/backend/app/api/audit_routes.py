@@ -726,3 +726,62 @@ def preview_material(material_id: int,
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+# ============================================================
+# v1.5 批量删除材料
+# ============================================================
+from pydantic import BaseModel as _PydanticBaseModel
+
+
+class BatchDeleteRequest(_PydanticBaseModel):
+    material_ids: list[int]
+
+
+@materials_router.post("/batch-delete", response_model=dict)
+def batch_delete_materials(req: BatchDeleteRequest,
+                           db: Session = Depends(get_db),
+                           user: User = Depends(require_auditor)):
+    """批量删除材料。复用 v1.4 引用计数：被其它 Material 引用的物理文件保留。"""
+    import os
+    if not req.material_ids:
+        return {"deleted": 0, "deleted_physical": 0, "kept_physical": 0, "errors": []}
+    mats = (db.query(Material)
+              .filter(Material.id.in_(req.material_ids))
+              .all())
+    deleted_db = 0
+    deleted_physical = 0
+    kept_physical = 0
+    errors: list[str] = []
+    for m in mats:
+        try:
+            if m.storage_path:
+                if m.content_hash:
+                    other_refs = (db.query(Material)
+                                    .filter(Material.content_hash == m.content_hash,
+                                            Material.id != m.id)
+                                    .count())
+                    if other_refs > 0:
+                        kept_physical += 1
+                    elif os.path.exists(m.storage_path):
+                        os.remove(m.storage_path)
+                        deleted_physical += 1
+                elif os.path.exists(m.storage_path):
+                    os.remove(m.storage_path)
+                    deleted_physical += 1
+            db.delete(m)
+            deleted_db += 1
+        except Exception as exc:
+            errors.append(f"id={m.id}: {exc}")
+    db.commit()
+    log_action(db, user, "material.batch_delete",
+               target_type="material", target_id=0,
+               detail=f"批量删除材料 入选 {len(req.material_ids)} / "
+                      f"删 {deleted_db} (物理删 {deleted_physical} 留 {kept_physical}) / "
+                      f"错 {len(errors)}")
+    return {
+        "deleted": deleted_db,
+        "deleted_physical": deleted_physical,
+        "kept_physical": kept_physical,
+        "errors": errors[:10],
+    }
