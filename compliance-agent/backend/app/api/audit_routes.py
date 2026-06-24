@@ -16,6 +16,8 @@ from app.api.schemas import (
     FindingOut,
     FindingRectifyConfirmRequest,
     FindingRectifyRequest,
+    BatchReviewRequest,
+    BatchReviewResponse,
     FindingReviewRequest,
     MaterialOut,
     TaskDetailOut,
@@ -595,6 +597,32 @@ def download_task_worksheet_xlsx(task_id: int,
                 f"attachment; filename=worksheet_{task.id}.xlsx; "
                 f"filename*=UTF-8''{filename_quoted}"
         },
+    )
+
+
+# ============================================================
+# Finding 批量复核（v1.6）
+# ============================================================
+@tasks_router.post(
+    "/{task_id}/findings/batch-review",
+    response_model=BatchReviewResponse,
+)
+def batch_review_findings(
+    task_id: int,
+    req: BatchReviewRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auditor),
+):
+    """v1.6：按 indicator_id / finding_type 批量复核同任务下的 finding。"""
+    return audit_service.batch_review_findings(
+        db,
+        task_id=task_id,
+        status=req.status,
+        note=req.note,
+        user=user,
+        indicator_id=req.indicator_id,
+        finding_type=req.finding_type,
+        only_pending=req.only_pending,
     )
 
 
