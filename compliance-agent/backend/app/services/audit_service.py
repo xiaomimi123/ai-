@@ -176,6 +176,22 @@ def upload_material(db: Session, task: AuditTask, *,
     material._reused_size_mb = reused_size_mb
     material._binding_confidence = binding_confidence   # v1.5 新增
     material._binding_source = binding_source           # v1.5 新增
+
+    # v1.5: 上传后自动形式审查 → Finding（受 AppSetting 开关控制）
+    # 仅当文件有实质文本内容时运行（< 50 字符视为空文件 / 测试占位，跳过）
+    try:
+        from app.services.settings_service import get_auto_form_review_enabled
+        if (get_auto_form_review_enabled(db)
+                and material.indicator_id
+                and len(material.parsed_text or "") >= 50):
+            try:
+                ke_dict = json.loads(material.key_elements or "{}")
+            except Exception:
+                ke_dict = {}
+            _create_form_review_findings(db, task, material, ke_dict)
+    except Exception as exc:
+        print(f"[form_review] 上传后自动审查失败（不阻塞）: {exc}")
+
     return material
 
 
@@ -413,3 +429,79 @@ def finalize_task(db: Session, task_id: int, user: User) -> AuditTask:
                detail=f"任务 {task.name} 定稿")
     db.commit(); db.refresh(task)
     return task
+
+
+# ============================================================
+# v1.5 上传后自动形式审查 → Finding
+# ============================================================
+_FORM_REVIEW_RULES = [
+    # (rule_key, 检测 key, 触发条件 lambda, finding_type, severity, description, suggestion)
+    ("seal",
+     "has_official_seal",
+     lambda v: v is False,
+     "形式性", "中",
+     "材料未识别到公章 / 印章 / 签章",
+     "请确认材料是否为正式盖章版本；扫描件请确保印章清晰可辨"),
+    ("date",
+     "issue_date",
+     lambda v: not v,
+     "形式性", "中",
+     "材料未识别到落款日期",
+     "正式文件应包含发文/印发日期"),
+    ("docno",
+     "document_number",
+     lambda v: not v,
+     "形式性", "低",
+     "材料未识别到正式文号",
+     "如属内部材料可忽略；正式发文应包含文件编号"),
+    ("draft",
+     "is_draft",
+     lambda v: bool(v),
+     "形式性", "高",
+     "材料疑似草稿 / 征求意见稿",
+     "正式核查应使用定稿版本"),
+]
+
+
+def _create_form_review_findings(db: Session, task: AuditTask,
+                                  material: Material,
+                                  key_elements: dict) -> int:
+    """v1.5: 对 material 跑 4 项形式审查 → 创建 Finding。返回创建条数。
+
+    不在 material.indicator_id 为空时创建（避免孤儿 finding）。
+    幂等：同一 material + rule_key 组合已存在则跳过。
+    """
+    if not material.indicator_id:
+        return 0
+    # 查询已有 rule findings（evidence_location 编码了 rule_key，防重复）
+    existing_locs: set[str] = set()
+    existing = (db.query(Finding.evidence_location)
+                  .filter(Finding.material_id == material.id,
+                          Finding.source == "rule")
+                  .all())
+    existing_locs = {row[0] for row in existing}
+
+    created = 0
+    for rule_key, ke_key, trigger_fn, ftype, severity, desc, suggest in _FORM_REVIEW_RULES:
+        actual = key_elements.get(ke_key)
+        if not trigger_fn(actual):
+            continue
+        loc = f"material#{material.id}#{rule_key}"
+        if loc in existing_locs:
+            continue
+        finding = Finding(
+            task_id=task.id,
+            material_id=material.id,
+            indicator_id=material.indicator_id,
+            finding_type=ftype,
+            severity=severity,
+            description=f"{desc}（文件：{material.file_name[:50] if material.file_name else ''}）",
+            evidence_location=loc,
+            suggestion=suggest,
+            source="rule",
+        )
+        db.add(finding)
+        created += 1
+    if created:
+        db.commit()
+    return created
