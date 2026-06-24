@@ -794,6 +794,32 @@
                   </div>
                 </form>
               </div>
+
+              <!-- v1.5 上传后自动形式审查 -->
+              <div class="console-section" style="margin-top:24px">
+                <div class="console-section-head">
+                  <h2 class="console-section-title">上传后自动形式审查</h2>
+                  <p class="console-section-desc">
+                    启用后，每次上传材料会自动检测公章 / 落款日期 / 文号 / 草稿等形式性问题，
+                    自动生成 finding 挂到对应指标下，在工作底稿"核查发现"区可查看。
+                  </p>
+                </div>
+                <form id="auto-form-review-form">
+                  <div class="kv-row">
+                    <div>
+                      <div class="kv-key">启用自动形式审查</div>
+                      <div class="kv-key-sub">上传后立即创建 finding</div>
+                    </div>
+                    <div class="kv-value">
+                      <label><input type="checkbox" id="auto-form-review-enabled" /> 启用</label>
+                    </div>
+                  </div>
+                  <div id="auto-form-review-status" class="text-sm mt-5"></div>
+                  <div class="action-bar mt-4">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                  </div>
+                </form>
+              </div>
             </div>
 
             <!-- 系统信息 -->

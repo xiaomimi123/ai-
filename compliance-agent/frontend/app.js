@@ -3183,7 +3183,7 @@ function setConsoleTab(tab) {
   document.querySelectorAll(".console-panel").forEach(p => p.classList.add("hidden"));
   document.getElementById("console-" + tab).classList.remove("hidden");
   switch (tab) {
-    case "llm": loadLLMConfig(); loadVisionConfig(); break;
+    case "llm": loadLLMConfig(); loadVisionConfig(); loadAutoFormReviewConfig(); break;
     case "system": loadSystemInfo(); break;
     case "users": loadUsers(); break;
     case "units": loadUnitsConsole(); break;
@@ -3369,6 +3369,35 @@ document.getElementById("vision-test").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = btn._origText || "测试连接";
+  }
+});
+
+// v1.5 自动形式审查配置
+async function loadAutoFormReviewConfig() {
+  try {
+    const cfg = await api("/settings/auto-form-review");
+    document.getElementById("auto-form-review-enabled").checked = !!cfg.enabled;
+    document.getElementById("auto-form-review-status").textContent = "";
+  } catch (e) {
+    console.warn("加载自动审查配置失败：", e.message);
+  }
+}
+
+document.getElementById("auto-form-review-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const status = document.getElementById("auto-form-review-status");
+  const enabled = document.getElementById("auto-form-review-enabled").checked;
+  try {
+    await api("/settings/auto-form-review", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({enabled}),
+    });
+    const label = enabled ? "已启用" : "已关闭";
+    status.innerHTML = `<div class="callout callout-success">✓ ${label}</div>`;
+    toast(`✓ 自动形式审查 ${label}`, "success");
+  } catch (e) {
+    status.innerHTML = `<div class="callout callout-error">✗ ${esc(e.message)}</div>`;
   }
 });
 
