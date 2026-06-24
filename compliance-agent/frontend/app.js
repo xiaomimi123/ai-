@@ -1833,7 +1833,17 @@ function renderFindings() {
   if (!State.activeFindingId || !filtered.find(f => f.id === State.activeFindingId)) {
     State.activeFindingId = filtered[0].id;
   }
-  renderFindingDetail(filtered.find(f => f.id === State.activeFindingId));
+  // v1.6: 自动展开 active finding 所在卡，避免左侧看似空白
+  const activeFinding = filtered.find(f => f.id === State.activeFindingId);
+  if (activeFinding) {
+    const activeKey = activeFinding.indicator_id == null
+      ? "" : String(activeFinding.indicator_id);
+    const activeCard = listBox.querySelector(
+      `.finding-indicator-card[data-indicator-id="${activeKey}"]`
+    );
+    if (activeCard) activeCard.classList.add("is-open");
+  }
+  renderFindingDetail(activeFinding);
 }
 
 function _renderIndicatorCard(group) {
@@ -1926,8 +1936,7 @@ function rectifyBadge(s) {
   return `<span class="${cls}">${label}</span>`;
 }
 
-// V3：5 维度批量忽略 — 一键把同类未复核 finding 全部 ignored
-const _BULK_DIMS = ["真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题"];
+// V3：5 维度批量忽略 — 一键把同类未复核 finding 全部 ignored（复用 _FIC_DIMS）
 
 function renderFindingBulkActions(findings) {
   const bar = document.getElementById("finding-bulk-actions");
@@ -1935,7 +1944,7 @@ function renderFindingBulkActions(findings) {
   // 统计每个维度的"未复核"数量
   const pending = findings.filter(f => (f.review_status || "pending") === "pending");
   const counts = {};
-  for (const t of _BULK_DIMS) counts[t] = 0;
+  for (const t of _FIC_DIMS) counts[t] = 0;
   for (const f of pending) {
     if (counts[f.finding_type] !== undefined) counts[f.finding_type]++;
   }
@@ -1944,7 +1953,7 @@ function renderFindingBulkActions(findings) {
     bar.innerHTML = `<span class="text-muted">✓ 所有疑点已复核</span>`;
     return;
   }
-  const chips = _BULK_DIMS
+  const chips = _FIC_DIMS
     .filter(t => counts[t] > 0)
     .map(t => `<button class="btn btn-ghost btn-sm" style="font-size:12px"
                        onclick="bulkIgnoreFindings('${t}')"
