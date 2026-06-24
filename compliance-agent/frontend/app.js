@@ -1057,7 +1057,7 @@ async function loadWorksheet() {
   try {
     ws = await api(`/tasks/${State.taskId}/worksheet`);
   } catch (e) {
-    body.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding:24px">底稿尚未生成。请先在"材料"标签页触发 AI 核查。</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding:24px">底稿尚未生成。请先在"材料上传绑定"标签页触发 AI 核查。</td></tr>`;
     return;
   }
   State.worksheet = ws;
