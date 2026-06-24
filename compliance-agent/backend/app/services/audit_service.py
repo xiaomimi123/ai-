@@ -31,6 +31,11 @@ from app.models import (
 from app.parsers import parse, SUPPORTED_EXTENSIONS
 from app.parsers.dispatcher import UnsupportedFormatError
 
+# v1.6: 5 维度 finding_type 允许集 — 用于批量复核接口校验
+_VALID_FINDING_TYPES = (
+    "真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题",
+)
+
 
 # ============================================================
 # 单位管理
@@ -358,6 +363,8 @@ def batch_review_findings(
         raise HTTPException(400, f"无效复核状态：{status}")
     if indicator_id is None and finding_type is None:
         raise HTTPException(400, "indicator_id 与 finding_type 至少传一个")
+    if finding_type is not None and finding_type not in _VALID_FINDING_TYPES:
+        raise HTTPException(400, f"无效 finding_type：{finding_type}")
 
     task = db.get(AuditTask, task_id)
     if not task:
@@ -388,7 +395,8 @@ def batch_review_findings(
         db, user, "finding.batch_review",
         target_type="task", target_id=task_id,
         detail=(f"status={status} indicator_id={indicator_id} "
-                f"finding_type={finding_type} updated={updated} skipped={skipped}"),
+                f"finding_type={finding_type} candidates={len(candidates)} "
+                f"updated={updated} skipped={skipped}"),
     )
     db.commit()
     return {"updated": updated, "skipped": skipped}
