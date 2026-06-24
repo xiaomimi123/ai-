@@ -224,3 +224,66 @@ def match_indicator_by_content(
         return None
     scores.sort(key=lambda x: (-x[0], x[1].indicator_code))
     return scores[0][1]
+
+
+# ============================================================
+# v1.5：子类 → 该子类「制度类」指标的默认映射（路径兜底用）
+# ============================================================
+SUBCATEGORY_TO_PROTOCOL_INDICATOR: dict[str, str] = {
+    "（一）议事决策机制":           "I-01",
+    "（一）预算业务控制":           "I-13",
+    "（一）内部监督机制建立情况":   "I-51",
+    "（二）内部权力运行":           "I-04",
+    "（二）收支业务控制":           "I-20",
+    "（三）政府采购业务控制":       "I-25",
+    "（三）组织架构":               "I-08",
+    "（四）财务信息":               "I-10",
+    "（四）资产控制":               "I-32",
+    "（五）建设项目控制":           "I-37",
+    "（六）合同控制":               "I-44",
+}
+
+
+def match_indicator_by_path_and_content(
+    relative_path: str,
+    file_name: str,
+    parsed_text: str,
+    indicators: Iterable[Indicator],
+) -> tuple[Optional[Indicator], str, str]:
+    """v1.5 路径感知匹配，返回 (indicator, confidence, source) 三元组。
+
+    confidence: "high" | "medium" | "none"
+    source: "path+keyword" | "path+protocol_fallback" | "keyword_global" | "none"
+
+    优先级：
+    1. 路径含子类 + 文件名/内容命中候选指标关键词 → high / path+keyword
+    2. 路径含子类 + 候选无命中 → 子类制度类指标 → medium / path+protocol_fallback
+    3. 路径无子类 + 全库关键词命中 → medium / keyword_global
+    4. 都不命中 → (None, "none", "none")
+    """
+    indicators = list(indicators)
+    # 只对目录部分（去除最后的文件名）做子类匹配，避免文件名里的关键词误触发
+    import posixpath as _posixpath
+    dir_part = _posixpath.dirname((relative_path or "").replace("\\", "/"))
+    subcategory = match_subcategory(_normalize(dir_part))
+    if subcategory:
+        candidates = [
+            ind for ind in indicators
+            if _normalize(ind.subcategory or ind.category or "") == _normalize(subcategory)
+        ]
+        if candidates:
+            hit = match_indicator_by_content(file_name, parsed_text, candidates)
+            if hit:
+                return (hit, "high", "path+keyword")
+            protocol_code = SUBCATEGORY_TO_PROTOCOL_INDICATOR.get(_normalize(subcategory))
+            if protocol_code:
+                protocol_ind = next(
+                    (ind for ind in indicators if ind.indicator_code == protocol_code),
+                    None,
+                )
+                if protocol_ind:
+                    return (protocol_ind, "medium", "path+protocol_fallback")
+    hit = match_indicator_by_content(file_name, parsed_text, indicators)
+    if hit:
+        return (hit, "medium", "keyword_global")
+    return (None, "none", "none")
