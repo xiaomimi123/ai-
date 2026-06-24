@@ -104,3 +104,23 @@ def save_vision_config(db: Session, enabled: bool,
         else:
             db.add(AppSetting(key=key, value=val))
     db.commit()
+
+
+# ============================================================
+# v1.5 上传后自动形式审查开关
+# ============================================================
+def get_auto_form_review_enabled(db: Session) -> bool:
+    row = db.query(AppSetting).filter_by(key="auto_form_review_enabled").first()
+    if not row:
+        return True  # 默认开启
+    return (row.value or "true").lower() == "true"
+
+
+def set_auto_form_review_enabled(db: Session, enabled: bool) -> None:
+    row = db.query(AppSetting).filter_by(key="auto_form_review_enabled").first()
+    val = "true" if enabled else "false"
+    if row:
+        row.value = val
+    else:
+        db.add(AppSetting(key="auto_form_review_enabled", value=val))
+    db.commit()

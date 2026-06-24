@@ -173,3 +173,26 @@ def test_vision_connection(req: VisionTestIn,
         return {"success": True, "model": model, "preview": reply}
     except Exception as exc:
         return {"success": False, "error": f"{type(exc).__name__}: {str(exc)[:280]}"}
+
+
+# ============================================================
+# v1.5 自动形式审查开关
+# ============================================================
+class AutoFormReviewIn(_BaseModel):
+    enabled: bool
+
+
+@settings_router.get("/auto-form-review", response_model=dict)
+def get_auto_form_review_settings(db: Session = Depends(get_db),
+                                  _: User = Depends(require_admin)):
+    """读取上传后自动形式审查开关。"""
+    return {"enabled": settings_service.get_auto_form_review_enabled(db)}
+
+
+@settings_router.post("/auto-form-review", response_model=dict)
+def save_auto_form_review_settings(req: AutoFormReviewIn,
+                                   db: Session = Depends(get_db),
+                                   _: User = Depends(require_admin)):
+    """保存开关。"""
+    settings_service.set_auto_form_review_enabled(db, req.enabled)
+    return {"ok": True, "enabled": req.enabled}
