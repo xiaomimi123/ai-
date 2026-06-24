@@ -136,12 +136,16 @@ def test_batch_review_intersection(client, admin_token, seeded_task):
     )
     assert r.status_code == 200, r.text
     assert r.json()["updated"] == 2
+    assert r.json()["skipped"] == 1  # A 真实-已确认（confirmed）被 only_pending 跳过
     for fid in fids["a_real_pending"]:
         assert _status_of(client, admin_token, fid) == "confirmed"
     assert _status_of(client, admin_token,
                       fids["a_complete_pending"][0]) == "pending"
     assert _status_of(client, admin_token,
                       fids["b_real_pending"][0]) == "pending"
+    # 已 confirmed 的 finding 不应被改写
+    assert _status_of(client, admin_token,
+                      fids["a_real_confirmed"][0]) == "confirmed"
 
 
 def test_batch_review_requires_filter(client, admin_token, seeded_task):
@@ -232,7 +236,31 @@ def test_batch_review_writes_audit_log(client, admin_token, seeded_task):
         assert log is not None
         assert "status=ignored" in log.detail
         assert f"indicator_id={ind_a}" in log.detail
-        assert "updated=" in log.detail
-        assert "candidates=" in log.detail
+        assert "updated=3" in log.detail
+        assert "skipped=1" in log.detail
+        assert "candidates=4" in log.detail
     finally:
         db.close()
+
+
+def test_batch_review_accepts_form_review_finding_type(
+        client, admin_token, seeded_task):
+    """v1.6 fix: 形式性 finding_type 必须可批量复核（rule 引擎产出）。"""
+    task_id, ind_a, *_ = seeded_task
+    # 给该任务下加一条"形式性" finding 作为目标
+    db = SessionLocal()
+    try:
+        f = Finding(task_id=task_id, indicator_id=ind_a,
+                    finding_type="形式性", severity="中",
+                    description="测试-形式性-pending",
+                    review_status="pending", source="rule")
+        db.add(f); db.commit()
+    finally:
+        db.close()
+    r = client.post(
+        f"/api/tasks/{task_id}/findings/batch-review",
+        headers=_hdr(admin_token),
+        json={"status": "ignored", "finding_type": "形式性"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] >= 1

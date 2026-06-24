@@ -34,7 +34,11 @@ from app.parsers.dispatcher import UnsupportedFormatError
 # v1.6: 5 维度 finding_type 允许集 — 用于批量复核接口校验
 _VALID_FINDING_TYPES = (
     "真实性问题", "完整性问题", "合规性问题", "重复性问题", "匹配性问题",
+    "形式性",  # v1.5 形式审查规则引擎产出
 )
+
+# v1.6: 复核状态合法值（review_finding / batch_review_findings 共用）
+_VALID_REVIEW_STATUSES = ("confirmed", "ignored", "adjusted")
 
 
 # ============================================================
@@ -326,7 +330,7 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
 # ============================================================
 def review_finding(db: Session, finding_id: int, status: str,
                    note: str, user: User) -> Finding:
-    if status not in ("confirmed", "ignored", "adjusted"):
+    if status not in _VALID_REVIEW_STATUSES:
         raise HTTPException(400, f"无效复核状态：{status}")
     finding = db.get(Finding, finding_id)
     if not finding:
@@ -359,7 +363,7 @@ def batch_review_findings(
     - only_pending=True 时跳过已复核条目（计入 skipped）
     - 一条 audit log 记录批量操作（含筛选条件 + updated 计数）
     """
-    if status not in ("confirmed", "ignored", "adjusted"):
+    if status not in _VALID_REVIEW_STATUSES:
         raise HTTPException(400, f"无效复核状态：{status}")
     if indicator_id is None and finding_type is None:
         raise HTTPException(400, "indicator_id 与 finding_type 至少传一个")
