@@ -1849,22 +1849,27 @@ function renderFindingBulkActions(findings) {
 
 window.bulkIgnoreFindings = async function(dim) {
   if (!confirm(`确定把所有「${dim}」未复核疑点一键标为"已忽略"？\n\n忽略后这类问题不再扣分。`)) return;
-  const targets = State.taskDetail.findings.filter(
+  const pendingCount = State.taskDetail.findings.filter(
     f => f.finding_type === dim && (f.review_status || "pending") === "pending"
-  );
-  if (!targets.length) { toast("没有未复核的此类条目"); return; }
-  toast(`批量处理 ${targets.length} 条…`);
-  let ok = 0;
-  for (const f of targets) {
-    try {
-      await api(`/findings/${f.id}/review`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "ignored", note: `批量忽略：${dim}` }),
-      });
-      ok++;
-    } catch (e) { console.warn("ignore failed", f.id, e.message); }
+  ).length;
+  if (!pendingCount) { toast("没有未复核的此类条目"); return; }
+  toast(`批量处理 ${pendingCount} 条…`);
+  try {
+    const resp = await api(`/tasks/${State.taskId}/findings/batch-review`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "ignored",
+        note: `批量忽略：${dim}`,
+        finding_type: dim,
+        only_pending: true,
+      }),
+    });
+    toast(`✓ 已忽略 ${resp.updated} 条「${dim}」`, "success");
+  } catch (e) {
+    console.error("批量忽略失败", e);
+    toast(`批量忽略失败：${e.message}`, "error");
+    return;
   }
-  toast(`✓ 已忽略 ${ok} 条「${dim}」`, "success");
   await loadTaskWorkspace(State.taskId);
 };
 
