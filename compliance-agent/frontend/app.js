@@ -1481,6 +1481,7 @@ function renderMaterials() {
     ].filter(Boolean).join(" ");
     const selectClass = m.indicator_id ? "form-select tw-bind-select" : "form-select tw-bind-select tw-bind-unset";
     return `<tr>
+      <td><input type="checkbox" class="material-select" data-material-id="${m.id}" /></td>
       <td><span class="code-id">#${pad(m.id)}</span></td>
       <td style="font-weight:500">${esc(m.file_name)}</td>
       <td>
@@ -1492,6 +1493,9 @@ function renderMaterials() {
       <td><div class="flex gap-1" style="flex-wrap:wrap">${badges}</div></td>
     </tr>`;
   }).join("");
+
+  // v1.5 重置 checkbox 状态 + 计数
+  _updateBatchDelButton();
 
   // 绑定下拉变更 → 调 PATCH
   tbody.querySelectorAll("select.tw-bind-select").forEach(sel => {
@@ -3731,3 +3735,52 @@ async function bootstrap() {
   showLogin();
 }
 bootstrap();
+
+// ============================================================
+// v1.5 材料批量删除（checkbox + 顶部按钮）
+// ============================================================
+function _updateBatchDelButton() {
+  const checked = document.querySelectorAll('input.material-select:checked').length;
+  const btn = document.getElementById("batch-delete-materials");
+  const cnt = document.getElementById("batch-del-count");
+  if (cnt) cnt.textContent = checked;
+  if (btn) btn.disabled = checked === 0;
+}
+
+document.addEventListener("change", (ev) => {
+  if (ev.target && ev.target.matches && ev.target.matches("input.material-select")) {
+    _updateBatchDelButton();
+  }
+  if (ev.target && ev.target.id === "material-select-all") {
+    document.querySelectorAll('input.material-select').forEach(cb => {
+      cb.checked = ev.target.checked;
+    });
+    _updateBatchDelButton();
+  }
+});
+
+document.addEventListener("click", async (ev) => {
+  if (!ev.target || !ev.target.closest) return;
+  const btn = ev.target.closest("#batch-delete-materials");
+  if (!btn) return;
+  ev.preventDefault();
+  const ids = Array.from(
+    document.querySelectorAll('input.material-select:checked')
+  ).map(cb => parseInt(cb.dataset.materialId, 10));
+  if (!ids.length) return;
+  if (!confirm(`确定删除选中的 ${ids.length} 份材料？\n（被其它任务引用的物理文件会保留）`)) return;
+  try {
+    const r = await api("/materials/batch-delete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({material_ids: ids}),
+    });
+    toast(`✓ 已删除 ${r.deleted} 份（物理删 ${r.deleted_physical} 留 ${r.kept_physical}）`,
+          "success");
+    if (typeof loadTaskWorkspace === "function" && State.taskId) {
+      await loadTaskWorkspace(State.taskId);
+    }
+  } catch (e) {
+    toast(`✗ ${e.message}`, "error");
+  }
+});
