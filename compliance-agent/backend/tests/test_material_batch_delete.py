@@ -66,6 +66,35 @@ def test_batch_delete_keeps_referenced_physical(auth_headers):
         assert Path(path).exists()
 
 
+def test_batch_delete_with_findings_cleans_up_dependents(auth_headers):
+    """v1.6 bug 回归：材料若有 Finding 引用，删除时不能 500（先删 Finding 再删 Material）。"""
+    from app.main import app
+    from app.models import SessionLocal, Material, Finding
+    with TestClient(app) as c:
+        t = _setup_task(c, auth_headers, "withfindings")
+        m = _upload(c, auth_headers, t, "have_finding.txt", b"content " * 50)
+        # 给该材料造一条 Finding
+        with SessionLocal() as s:
+            f = Finding(task_id=t, material_id=m["id"],
+                        finding_type="形式性", severity="中",
+                        description="测试-该材料-finding",
+                        review_status="pending", source="rule")
+            s.add(f); s.commit()
+            fid = f.id
+        # 删材料 — 期望 200，不能 500
+        r = c.post("/api/materials/batch-delete",
+                   headers=auth_headers,
+                   json={"material_ids": [m["id"]]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["deleted"] == 1
+        assert body["errors"] == []
+        # Material 和它的 Finding 都应被删
+        with SessionLocal() as s:
+            assert s.get(Material, m["id"]) is None
+            assert s.get(Finding, fid) is None
+
+
 def test_batch_delete_empty_list_returns_zero(auth_headers):
     """传空 list → deleted=0，不报错。"""
     from app.main import app

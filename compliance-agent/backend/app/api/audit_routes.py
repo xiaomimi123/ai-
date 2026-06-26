@@ -797,6 +797,10 @@ def batch_delete_materials(req: BatchDeleteRequest,
                 elif os.path.exists(m.storage_path):
                     os.remove(m.storage_path)
                     deleted_physical += 1
+            # 先删该材料名下的 Finding（FK 无 cascade，否则 commit 时 IntegrityError 500）
+            db.query(Finding).filter(Finding.material_id == m.id).delete(
+                synchronize_session=False,
+            )
             db.delete(m)
             deleted_db += 1
         except Exception as exc:
