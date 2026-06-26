@@ -182,19 +182,7 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
             task.progress_current = idx
             related = _materials_for_indicator(materials, indicator)
             if not related:
-                db.add(Finding(
-                    task_id=task.id,
-                    material_id=None,
-                    indicator_id=indicator.id,
-                    check_item_id=None,
-                    finding_type="完整性问题",
-                    severity="低",
-                    description=f"指标【{indicator.indicator_code} {indicator.name}】未上传任何佐证材料。",
-                    evidence_location="—",
-                    legal_basis=indicator.deduct_rules or "",
-                    suggestion=f"请补充与指标【{indicator.name}】相关的材料（建议：{indicator.required_materials or '查看指标定义'}）",
-                    source="rule",
-                ))
+                # v1.7：无绑定材料的指标不写 finding，也不扣分（由 worksheet 列体现"无材料"状态）
                 continue
 
             indicators_checked += 1

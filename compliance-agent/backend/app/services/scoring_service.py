@@ -43,6 +43,15 @@ REVIEW_WEIGHT = {
 }
 
 
+# v1.7：扣分粒度 0.25（最小步进）
+DEDUCT_STEP = 0.25
+
+
+def _round_to_step(x: float, step: float = DEDUCT_STEP) -> float:
+    """向最近 step 倍数舍入（0.30 → 0.25，0.40 → 0.50）。"""
+    return round(x / step) * step
+
+
 def _grade(score_pct: float) -> str:
     if score_pct >= 90:
         return "优"
@@ -115,8 +124,9 @@ def compute_task_scoring(db: Session, task: AuditTask) -> dict:
             ratio = SEVERITY_DEDUCT_RATIO[sev] * REVIEW_WEIGHT.get(review, 1.0)
             deducted += max_sc * ratio
 
-        # 裁剪到 [0, max_sc]
+        # 裁剪到 [0, max_sc]，再按 v1.7 粒度 0.25 取整
         deducted = min(deducted, max_sc)
+        deducted = _round_to_step(deducted)
         actual = max(0.0, max_sc - deducted)
         total_deducted += deducted
 

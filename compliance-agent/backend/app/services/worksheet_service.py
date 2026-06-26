@@ -30,7 +30,9 @@ from app.models import (
     Worksheet,
     WorksheetRow,
 )
-from app.services.scoring_service import REVIEW_WEIGHT, SEVERITY_DEDUCT_RATIO
+from app.services.scoring_service import (
+    REVIEW_WEIGHT, SEVERITY_DEDUCT_RATIO, _round_to_step,
+)
 
 
 # 新底稿模板 5 对 10 项（按新版列顺序）
@@ -255,6 +257,7 @@ def build_worksheet_draft(db: Session, task: AuditTask) -> Worksheet:
             ratio = SEVERITY_DEDUCT_RATIO[sev] * REVIEW_WEIGHT.get(review, 1.0)
             deducted += max_sc * ratio
         deducted = min(deducted, max_sc)
+        deducted = _round_to_step(deducted)  # v1.7：扣分粒度 0.25
         audited = max(0.0, max_sc - deducted)
 
         # 7 对 14 项打标

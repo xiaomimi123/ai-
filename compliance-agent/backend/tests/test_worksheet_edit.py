@@ -115,7 +115,18 @@ def test_report_uses_worksheet_text(client):
     """报告生成时应包含底稿里编辑过的核查情况说明。"""
     task_id = _setup_task_with_worksheet(client, "V2-REPORT")
     ws = client.get(f"/api/tasks/{task_id}/worksheet").json()
-    rid = ws["rows"][0]["id"]
+    row = ws["rows"][0]
+    rid = row["id"]
+    # v1.7 后：orchestrator 不再为无材料指标自动写 finding，
+    # 而报告的"各指标核查明细"只迭代有 finding 的指标，
+    # 因此显式注入一条 finding 以便 audit_finding_text 被渲染。
+    from app.models import Finding, SessionLocal
+    with SessionLocal() as s:
+        s.add(Finding(task_id=task_id, indicator_id=row["indicator_id"],
+                      finding_type="合规性问题", severity="低",
+                      description="V2-REPORT 测试用 finding",
+                      review_status="pending", source="rule"))
+        s.commit()
     custom_text = "审计师独家批注：制度齐全且公章清晰，建议保持原分。"
     client.patch(f"/api/tasks/{task_id}/worksheet/rows/{rid}",
                  json={"audit_finding_text": custom_text})
