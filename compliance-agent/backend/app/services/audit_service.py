@@ -208,42 +208,73 @@ def upload_material(db: Session, task: AuditTask, *,
 # 材料批量自动绑定（关键词 + AI 阅读双阶段）
 # ============================================================
 def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = None,
-                        use_ai: bool = True) -> dict:
-    """对任务下未绑定指标的材料做批量自动绑定。
+                        use_ai: bool = True, rebind: bool = False) -> dict:
+    """对任务下材料做批量自动绑定。
 
     两阶段：
-    1) **关键词匹配**：文件名/路径含指标关键词的直接命中（毫秒级，准）
+    1) **关键词匹配（路径感知）**：用 `match_indicator_by_path_and_content`，
+       把 `material.file_name` 里的目录部分作为路径上下文（v1.8）
     2) **AI 阅读分类**：剩余未绑定材料发给 LLM，根据文件名+解析文本分类
        （30 秒 - 2 分钟，大幅提高命中率）
+    3) **subcategory 兜底**：尽量将 still_unbound 降为 0
+
+    参数：
+    - rebind: 默认 False —— 仅匹配 indicator_id 为空的材料（保留 v1.5 之前行为）
+              True —— 重新评估**所有**材料，会覆盖已有绑定（含错误绑定）
+              此时会把每次 old→new 写入 audit log（v1.8 新增）
 
     返回：
-    {checked, keyword_bound, ai_bound, still_unbound, samples, ai_used}
+    {checked, keyword_bound, ai_bound, still_unbound, samples, ai_used, rebound}
     """
-    from app.services.material_matcher import match_indicator_by_content
+    import posixpath as _posixpath
+    from app.services.material_matcher import match_indicator_by_path_and_content
     indicators = db.query(Indicator).all()
 
-    # 第 1 阶段：关键词匹配
-    unbound_materials: list[Material] = [m for m in task.materials if not m.indicator_id]
-    checked = len(unbound_materials)
+    # 第 1 阶段：关键词匹配（路径感知）
+    if rebind:
+        # 重新评估所有材料（含已绑定）
+        target_materials: list[Material] = list(task.materials)
+    else:
+        target_materials = [m for m in task.materials if not m.indicator_id]
+    checked = len(target_materials)
     keyword_bound = 0
+    rebound = 0   # rebind=True 时 old→new 变化条数（含被改 / 不含原本未绑）
     still_unbound: list[Material] = []
     samples: list[dict] = []
 
-    for m in unbound_materials:
-        ind = match_indicator_by_content(
-            m.file_name, m.parsed_text or "", indicators,
+    for m in target_materials:
+        # 把 file_name 拆出"目录段 + 纯文件名"作为路径感知输入
+        raw = (m.file_name or "").replace("\\", "/")
+        dir_part = _posixpath.dirname(raw)
+        base_name = _posixpath.basename(raw) or raw
+        ind, _conf, _src = match_indicator_by_path_and_content(
+            dir_part, base_name, m.parsed_text or "", indicators,
         )
         if ind:
+            old_iid = m.indicator_id
+            if old_iid == ind.id:
+                # 已绑且重新评估结果一致 → 跳过
+                continue
+            if old_iid is not None and rebind:
+                rebound += 1
+                log_action(
+                    db, user, "material.rebind",
+                    target_type="material", target_id=m.id,
+                    detail=(f"任务 #{task.id} 材料 {m.file_name} 重绑 "
+                            f"{old_iid} → {ind.id}（{ind.indicator_code}），source={_src}"),
+                )
             m.indicator_id = ind.id
             keyword_bound += 1
             if len(samples) < 5:
                 samples.append({
                     "file": (m.file_name or "")[:60],
                     "indicator_code": ind.indicator_code,
-                    "source": "keyword",
+                    "source": _src or "keyword",
                 })
         else:
-            still_unbound.append(m)
+            # 未命中：仍未绑定的进 still_unbound（已绑定的保留原值，避免被误清）
+            if not m.indicator_id:
+                still_unbound.append(m)
 
     db.flush()
 
@@ -321,6 +352,7 @@ def auto_bind_materials(db: Session, task: AuditTask, user: Optional[User] = Non
         "bound_now": keyword_bound + ai_bound + fallback_bound,
         "still_unbound": len(still_unbound),
         "ai_used": ai_used,
+        "rebound": rebound,
         "samples": samples,
     }
 

@@ -295,7 +295,10 @@ def build_worksheet_draft(db: Session, task: AuditTask) -> Worksheet:
 
         # V3：material_flags 触发的"重复性 / 匹配性"Finding 也写入数据库
         # （让维度分布统计和"按维度批量忽略"能命中）
-        if is_dup:
+        # v1.8：无任何绑定材料的指标直接跳过这两类 finding——既无材料可言，
+        # 不应再产生"匹配率 0%"或"材料重复"这种针对性误报（与 v1.7 orchestrator
+        # 跳过逻辑对齐）
+        if any_material_for_ind and is_dup:
             # 先看是否已存在同 indicator 的重复性问题
             existed = any(f.finding_type == "重复性问题" for f in ind_findings)
             if not existed:
@@ -312,7 +315,7 @@ def build_worksheet_draft(db: Session, task: AuditTask) -> Worksheet:
                 )
                 db.add(dup_finding)
                 ind_findings.append(dup_finding)
-        if match_ratio < MATCH_THRESHOLD:
+        if any_material_for_ind and match_ratio < MATCH_THRESHOLD:
             existed_match = any(f.finding_type == "匹配性问题" for f in ind_findings)
             if not existed_match:
                 from app.models import Finding as _F

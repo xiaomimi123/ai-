@@ -27,6 +27,20 @@ from app.models import Indicator
 # ============================================================
 SUBCATEGORY_HINTS: list[tuple[str, list[str]]] = [
     # (subcategory_canonical_name, [关键词列表])
+    # ----------------------------------------------------------
+    # v1.5 评价表细分子类（顺序优先于旧版数字编号 hints，
+    # 否则 "（二）内部权力运行" 会被 "（二）" 抢匹到 "（二）收支业务控制"）
+    # 关键词使用独特中文短语（避免与编号冲突），路径感知到具体子类后
+    # 通过 SUBCATEGORY_TO_PROTOCOL_INDICATOR 兜底到对应制度类指标
+    # ----------------------------------------------------------
+    ("（一）议事决策机制",          ["议事决策机制", "三重一大议事", "三重一大决策"]),
+    ("（一）内部监督机制建立情况",  ["内部监督机制建立", "内部监督机制"]),
+    ("（二）内部权力运行",          ["内部权力运行", "关键岗位干部交流", "权力运行"]),
+    ("（三）组织架构",              ["组织架构", "内控领导小组成立", "内控牵头部门"]),
+    ("（四）财务信息",              ["财务信息", "财务报告核查", "会计核算质量"]),
+    # ----------------------------------------------------------
+    # 旧版数字编号子类（v1.0/v1.1 评价表）
+    # ----------------------------------------------------------
     ("（一）预算业务控制",        ["（一）", "(一)", "预算业务", "预算管理", "预算"]),
     ("（二）收支业务控制",        ["（二）", "(二)", "收支业务", "收支管理", "收支", "票据"]),
     ("（三）政府采购业务控制",     ["（三）", "(三)", "政府采购", "采购业务", "采购管理", "采购"]),
@@ -37,7 +51,7 @@ SUBCATEGORY_HINTS: list[tuple[str, list[str]]] = [
     ("补充指标",                  ["补充指标", "其他"]),
     # 组织层面放最后兜底（"组织"在很多路径里都可能出现）
     ("组织层面内部控制",          ["组织层面", "三重一大", "分事行权", "分岗设权", "分级授权",
-                                  "轮岗", "内控组织", "组织架构", "内控会议", "会计核算",
+                                  "轮岗", "内控组织", "内控会议", "会计核算",
                                   "信息化", "信息系统"]),
 ]
 
@@ -121,8 +135,12 @@ def _normalize(s: str) -> str:
 
 
 def match_subcategory(file_name: str) -> Optional[str]:
-    """返回 subcategory 规范名（如「（一）预算业务控制」），找不到返回 None。"""
-    s = _normalize(file_name)
+    """返回 subcategory 规范名（如「（一）预算业务控制」），找不到返回 None。
+
+    v1.8：除常规 _normalize 外，还把路径里的所有 ASCII/全角空白折叠掉
+    （如 `"（二） 内部权力运行"` → `"（二）内部权力运行"`），使 hint 子串能稳定命中。
+    """
+    s = re.sub(r"\s+", "", _normalize(file_name))
     if not s:
         return None
     for canonical, kws in SUBCATEGORY_HINTS:
@@ -275,14 +293,16 @@ def match_indicator_by_path_and_content(
             hit = match_indicator_by_content(file_name, parsed_text, candidates)
             if hit:
                 return (hit, "high", "path+keyword")
-            protocol_code = SUBCATEGORY_TO_PROTOCOL_INDICATOR.get(_normalize(subcategory))
-            if protocol_code:
-                protocol_ind = next(
-                    (ind for ind in indicators if ind.indicator_code == protocol_code),
-                    None,
-                )
-                if protocol_ind:
-                    return (protocol_ind, "medium", "path+protocol_fallback")
+        # v1.8：子类识别成功 → 即使 candidates 为空（如 v1.5 子类的 subcategory
+        # 字段在指标库里是空字符串），也通过 protocol_fallback 兜底到对应制度类指标
+        protocol_code = SUBCATEGORY_TO_PROTOCOL_INDICATOR.get(_normalize(subcategory))
+        if protocol_code:
+            protocol_ind = next(
+                (ind for ind in indicators if ind.indicator_code == protocol_code),
+                None,
+            )
+            if protocol_ind:
+                return (protocol_ind, "medium", "path+protocol_fallback")
     hit = match_indicator_by_content(file_name, parsed_text, indicators)
     if hit:
         return (hit, "medium", "keyword_global")

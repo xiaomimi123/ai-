@@ -1546,11 +1546,18 @@ window.runAutoBind = async function() {
   }
   toast("AI 正在阅读材料内容，请稍候…（约 1-2 分钟）");
   try {
-    const res = await api(`/tasks/${State.taskId}/materials/auto-bind`, { method: "POST" });
+    // v1.8：带 rebind=true 强制重新评估全部材料（含已绑定），用于纠正历史错绑
+    const res = await api(`/tasks/${State.taskId}/materials/auto-bind`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rebind: true }),
+    });
     const fb = res.fallback_bound || 0;
-    const detail = res.ai_used
+    const rb = res.rebound || 0;
+    const base = res.ai_used
       ? `关键词命中 ${res.keyword_bound} + AI 命中 ${res.ai_bound} + 兜底 ${fb}`
       : `关键词命中 ${res.keyword_bound} + 兜底 ${fb}（未启用 LLM）`;
+    const detail = rb > 0 ? `${base}（重绑 ${rb} 份）` : base;
     toast(`✓ ${detail}，剩 ${res.still_unbound} 份未绑定`, "success");
     await loadTaskWorkspace(State.taskId);
   } catch (e) {

@@ -237,17 +237,28 @@ def bind_material_indicator(task_id: int, material_id: int,
     return material
 
 
+class AutoBindRequest(BaseModel):
+    rebind: bool = False  # v1.8：True 时重新评估所有材料（含已绑定的）
+
+
 @tasks_router.post("/{task_id}/materials/auto-bind")
 def auto_bind_materials(task_id: int,
+                        payload: Optional[AutoBindRequest] = None,
                         db: Session = Depends(get_db),
                         user: User = Depends(require_auditor)):
-    """对未绑定指标的材料按文件名关键词批量自动绑定。"""
+    """对任务下材料按文件名/路径关键词批量自动绑定。
+
+    body:
+    - rebind (bool, default False): True 时强制重新评估**所有**材料
+      （含已绑定的），用于纠正历史错绑；老前端不传则保持只补绑未绑定的旧行为
+    """
     task = db.get(AuditTask, task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
     if not _user_can_see_task(user, task):
         raise HTTPException(403, "无权操作此任务")
-    return audit_service.auto_bind_materials(db, task, user)
+    rebind = bool(payload.rebind) if payload else False
+    return audit_service.auto_bind_materials(db, task, user, rebind=rebind)
 
 
 @tasks_router.post("/{task_id}/run", response_model=AuditTaskOut)
