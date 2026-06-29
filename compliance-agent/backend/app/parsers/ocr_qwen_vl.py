@@ -45,9 +45,16 @@ def get_vision_client(db: Optional[Session]) -> Optional[Dict[str, Any]]:
         return None
 
 
+MAX_LONG_DIM_PX = 1600   # v1.9：dashscope Qwen-VL 单图大小限制，base64 后 < 4MB
+MAX_ZOOM = 2.0           # 上限 144 DPI（zoom=1.0 即 72 DPI）
+
+
 def _render_pdf_pages_to_png(pdf_path: str, page_indices: List[int],
-                             dpi: int = 150) -> List[bytes]:
+                             max_long_dim_px: int = MAX_LONG_DIM_PX) -> List[bytes]:
     """用 PyMuPDF 把指定 page_indices 渲染为 PNG bytes。
+
+    v1.9：按页面物理尺寸算 zoom，确保渲染像素**长边 ≤ max_long_dim_px**，
+    避免 dashscope `Multimodal file size is too large` 400 错误。
 
     不对 page_indices 去重 — 调用方自己负责。越界的 index 静默跳过。
     """
@@ -57,7 +64,11 @@ def _render_pdf_pages_to_png(pdf_path: str, page_indices: List[int],
     for i in page_indices:
         if 0 <= i < len(doc):
             page = doc[i]
-            pix = page.get_pixmap(dpi=dpi)
+            # page.rect 单位是 pt（1pt = 1/72 inch），zoom=1.0 → 72 DPI
+            rect = page.rect
+            page_long_pt = max(rect.width, rect.height) or 1.0
+            zoom = min(max_long_dim_px / page_long_pt, MAX_ZOOM)
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             out.append(pix.tobytes("png"))
     doc.close()
     return out

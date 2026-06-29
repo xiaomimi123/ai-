@@ -128,8 +128,10 @@ def upload_material(db: Session, task: AuditTask, *,
         dest.write_bytes(content)
         dest_path = str(dest)
 
-    # 解析 + 自动抽取 key_elements（v1.3: 传 db 让扫描件 PDF 自动 OCR）
-    parsed = parse(dest_path, db=db)
+    # 解析 + 自动抽取 key_elements
+    # v1.9：不再向 parse 传 db，扫描件 PDF 的 OCR 已移到 enrich_material_task
+    # 异步执行（dashscope 调用慢且偶尔 400 失败，同步阻塞上传 5-20 秒/张）
+    parsed = parse(dest_path)
     ke = parsed.key_elements
 
     # 校验指标存在
@@ -186,20 +188,14 @@ def upload_material(db: Session, task: AuditTask, *,
     material._binding_confidence = binding_confidence   # v1.5 新增
     material._binding_source = binding_source           # v1.5 新增
 
-    # v1.5: 上传后自动形式审查 → Finding（受 AppSetting 开关控制）
-    # 仅当文件有实质文本内容时运行（< 50 字符视为空文件 / 测试占位，跳过）
+    # v1.9：扫描件 OCR + 形式审查异步化（enrich_material_task）
+    # 上传链路只做"必须同步完成"的事：落盘 + 解析 + 自动绑定 + 落库
+    # OCR / form_review 在后台跑，失败也不影响主流程
     try:
-        from app.services.settings_service import get_auto_form_review_enabled
-        if (get_auto_form_review_enabled(db)
-                and material.indicator_id
-                and len(material.parsed_text or "") >= 50):
-            try:
-                ke_dict = json.loads(material.key_elements or "{}")
-            except Exception:
-                ke_dict = {}
-            _create_form_review_findings(db, task, material, ke_dict)
+        from app.tasks.jobs import enrich_material_task
+        enrich_material_task.delay(material.id)
     except Exception as exc:
-        print(f"[form_review] 上传后自动审查失败（不阻塞）: {exc}")
+        print(f"[enrich] enqueue 失败（不阻塞上传）: {exc}")
 
     return material
 
