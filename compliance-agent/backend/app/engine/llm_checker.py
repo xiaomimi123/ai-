@@ -142,7 +142,12 @@ def run_llm_checks(
 
     try:
         data = llm.extract_json(prompt, system=SYSTEM_PROMPT)
-    except Exception:
+    except Exception as exc:
+        # v2.2：余额不足是致命错误，向上抛让 orchestrator 顶层 except 分类 + 终止任务
+        from app.engine.errors import is_insufficient_balance
+        if is_insufficient_balance(exc):
+            raise
+        # 其它 LLM 抖动仍容忍：单次调用失败不阻塞整个任务，返回空 findings
         return []
 
     if not isinstance(data, dict):

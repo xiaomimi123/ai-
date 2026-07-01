@@ -33,29 +33,9 @@ def _ke_from_json(raw: str) -> KeyElements:
 
 
 # v2.2：LLM 余额不足 / 402 类异常分类，输出用户友好的 task.summary
-_INSUFFICIENT_BALANCE_NEEDLES = (
-    "insufficient balance",
-    "insufficient_balance",
-    "error code: 402",
-    "payment required",
-    "余额不足",
-    "账户欠费",
-)
-
-
-def _classify_run_audit_error(exc: Exception) -> tuple[str, str]:
-    """把 run_audit 主循环抛出的异常分类成 (kind, user_facing_summary)。
-
-    kind: "insufficient_balance" 或 "generic"，用于 log 分类。
-    user_facing_summary: 显示在 AuditTask.summary 里的中文文案。
-    """
-    text = str(exc).lower()
-    if any(needle in text for needle in _INSUFFICIENT_BALANCE_NEEDLES):
-        return (
-            "insufficient_balance",
-            "LLM 服务余额不足，请联系管理员充值后重新运行任务。",
-        )
-    return ("generic", f"核查失败：{exc}")
+# 实现搬到 app.engine.errors 与 llm_checker 共享；这里保留 module-level 别名以维持
+# 现有测试 import 路径（tests/test_v22_llm_insufficient_balance.py 直接 import 这个名字）
+from app.engine.errors import classify_run_audit_error as _classify_run_audit_error
 
 
 def _retrieve_legal_basis(indicator: Optional[Indicator]) -> str:
@@ -263,6 +243,11 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
                         for l in llm_findings:
                             db.add(_to_finding(task.id, mat.id, ind, l, source="llm"))
                     except Exception as exc:
+                        # v2.2：余额不足是持续状态，第一次遇到就升级为整个任务失败
+                        # （其它 LLM 抖动仍按原设计吞掉，容忍单次失败）
+                        kind, _summary = _classify_run_audit_error(exc)
+                        if kind == "insufficient_balance":
+                            raise
                         print(f"[LLM 并发] 失败 {ind.indicator_code}/{mat.file_name}: {exc}")
                     done_count += 1
                     # 每 5 项 commit 一次（只改文字，数字保留 indicator 维度）
