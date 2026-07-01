@@ -31,17 +31,18 @@ def _require_compose_file():
 # ============================================================
 # Section 1：backend uvicorn --workers
 # ============================================================
-def test_backend_service_uses_multiple_uvicorn_workers():
-    """v2.0：docker-compose.yml 里 backend 服务应显式指定 uvicorn --workers 2。
+def test_backend_service_explicitly_sets_uvicorn_workers():
+    """v2.0：docker-compose.yml 里 backend 服务应显式指定 --workers N（不吃默认）。
 
-    默认 Dockerfile CMD 走 workers=1 → 单进程串行处理，2-3 用户并发即卡。
+    默认 Dockerfile CMD 无 --workers → uvicorn 内部行为可能变化；
+    显式指定让每次部署行为一致。当前 workers=1（7 GiB 服务器内存约束），
+    未来升配可改 2 或换 gunicorn --preload。
     """
     _require_compose_file()
     text = DOCKER_COMPOSE.read_text(encoding="utf-8")
     assert "uvicorn" in text, "docker-compose 里没找到 uvicorn 相关命令"
-    assert ("--workers 2" in text or "--workers=2" in text), (
-        "docker-compose.yml backend 服务未指定 --workers 2；"
-        "会走 uvicorn 默认 1 进程"
+    assert "--workers" in text, (
+        "docker-compose.yml backend 服务未显式声明 --workers"
     )
 
 

@@ -5,9 +5,13 @@
 services:
   backend:
     build: ./backend
-    # v2.0：uvicorn --workers 2 提升并发（默认 1 进程会在 2-3 用户并发上传时排队）
-    # 内存约束：单进程约 3 GiB，2 workers ≈ 6 GiB，服务器 7 GiB 够用
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    # v2.0：显式指定 uvicorn workers 数
+    # 实测服务器 7 GiB 内存 + 单 backend 进程运行时约 3 GiB（embedder 等模型驻留）
+    # → workers=2 会 OOM 崩溃第二个 worker
+    # 当前默认 workers=1，主要瓶颈由 Celery 拆队列（audit / enrich 独立 worker）+
+    # v1.9 OCR 异步化解决；如未来加内存到 16 GiB+，可改 workers=2
+    # 或换 gunicorn --preload -w 2 -k uvicorn.workers.UvicornWorker（fork 共享 embedder）
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     env_file: .env
     volumes:
       - ./backend/data:/app/data
