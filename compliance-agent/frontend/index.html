@@ -235,7 +235,19 @@
             <h1 class="page-title">核查任务</h1>
             <p class="page-sub">一个任务对应一个被检查单位的一次内控评价复核。</p>
           </div>
-          <button class="btn btn-primary" id="open-create-task"><span data-icon="plus"></span><span>新建任务</span></button>
+          <div class="task-search-wrap" style="display:flex;align-items:center;gap:8px;margin-left:auto">
+            <div style="position:relative;display:inline-flex;align-items:center">
+              <input id="task-search" type="text" placeholder="搜索任务名 / 单位 / 编号"
+                     style="min-width:240px;padding:6px 28px 6px 10px;border:1px solid #d0d7de;border-radius:6px;font-size:13px"
+                     autocomplete="off" />
+              <button id="task-search-clear" type="button" title="清空"
+                      style="position:absolute;right:4px;top:50%;transform:translateY(-50%);
+                             background:none;border:none;cursor:pointer;color:#999;
+                             padding:2px 6px;line-height:1;display:none;font-size:14px">×</button>
+            </div>
+            <span id="task-search-count" class="text-xs text-muted" style="min-width:80px"></span>
+            <button class="btn btn-primary" id="open-create-task"><span data-icon="plus"></span><span>新建任务</span></button>
+          </div>
         </div>
       </header>
       <div class="page-body">
