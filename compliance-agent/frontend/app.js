@@ -17,6 +17,7 @@ const State = {
   findingFilter: "all",
   activeFindingId: null,
   consoleTab: "llm",
+  taskSearchQuery: "",   // v2.1：任务列表搜索关键词（trim + toLowerCase 归一化）
 };
 
 // ============================================================
@@ -321,39 +322,109 @@ async function loadTasks() {
   try {
     const [units, tasks] = await Promise.all([api("/units"), api("/tasks")]);
     State.units = units; State.tasks = tasks;
-    const tbody = document.getElementById("tasks-tbody");
-    if (!tasks.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">
-        <div class="empty-state-glyph">⊕</div>暂无任务，点击右上角「+ 新建任务」开始。
-      </td></tr>`;
-      return;
-    }
-    tbody.innerHTML = tasks.map(t => {
-      const unit = units.find(u => u.id === t.unit_id);
-      return `
-        <tr class="is-row-button">
-          <td onclick="navigate('#/tasks/${t.id}')"><span class="code-id">#${pad(t.id)}</span></td>
-          <td onclick="navigate('#/tasks/${t.id}')" style="font-weight:500">${esc(unit ? unit.name : "—")}</td>
-          <td onclick="navigate('#/tasks/${t.id}')">${esc(t.name)}</td>
-          <td onclick="navigate('#/tasks/${t.id}')" class="table-mono">${t.eval_year}</td>
-          <td onclick="navigate('#/tasks/${t.id}')">
-            ${statusBadge(t.status)}
-            ${t.status === "running" && t.progress_total > 0
-              ? `<span class="text-xs text-muted" style="margin-left:6px">${t.progress_current}/${t.progress_total}</span>`
-              : ""}
-            ${t.fast_mode ? `<span class="text-xs" style="margin-left:6px;color:#856404">[快速]</span>` : ""}
-          </td>
-          <td onclick="navigate('#/tasks/${t.id}')" class="text-sm text-muted">${esc(t.summary || "—")}</td>
-          <td class="text-right" style="white-space:nowrap">
-            <button class="btn btn-ghost btn-sm" onclick="navigate('#/tasks/${t.id}')" title="查看">${icon("arrow")}</button>
-            <button class="btn btn-danger-ghost btn-sm" onclick="deleteTaskFromList(${t.id}, event)" title="删除任务">${icon("delete")}</button>
-          </td>
-        </tr>`;
-    }).join("");
+    applyTaskSearch();   // v2.1：应用当前搜索词，等价于全量渲染（空 query）
   } catch (e) { console.error(e); }
 }
 
+// v2.1：从 loadTasks 抽出的 tbody 渲染逻辑，供 applyTaskSearch 复用
+function renderTasksBody(tasks, units) {
+  const tbody = document.getElementById("tasks-tbody");
+  if (!tbody) return;
+  if (!tasks.length) {
+    const empty = State.taskSearchQuery
+      ? `<tr><td colspan="7" class="empty-state">未匹配到任务，请调整关键词。</td></tr>`
+      : `<tr><td colspan="7" class="empty-state">
+           <div class="empty-state-glyph">⊕</div>暂无任务，点击右上角「+ 新建任务」开始。
+         </td></tr>`;
+    tbody.innerHTML = empty;
+    return;
+  }
+  tbody.innerHTML = tasks.map(t => {
+    const unit = units.find(u => u.id === t.unit_id);
+    return `
+      <tr class="is-row-button">
+        <td onclick="navigate('#/tasks/${t.id}')"><span class="code-id">#${pad(t.id)}</span></td>
+        <td onclick="navigate('#/tasks/${t.id}')" style="font-weight:500">${esc(unit ? unit.name : "—")}</td>
+        <td onclick="navigate('#/tasks/${t.id}')">${esc(t.name)}</td>
+        <td onclick="navigate('#/tasks/${t.id}')" class="table-mono">${t.eval_year}</td>
+        <td onclick="navigate('#/tasks/${t.id}')">
+          ${statusBadge(t.status)}
+          ${t.status === "running" && t.progress_total > 0
+            ? `<span class="text-xs text-muted" style="margin-left:6px">${t.progress_current}/${t.progress_total}</span>`
+            : ""}
+          ${t.fast_mode ? `<span class="text-xs" style="margin-left:6px;color:#856404">[快速]</span>` : ""}
+        </td>
+        <td onclick="navigate('#/tasks/${t.id}')" class="text-sm text-muted">${esc(t.summary || "—")}</td>
+        <td class="text-right" style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick="navigate('#/tasks/${t.id}')" title="查看">${icon("arrow")}</button>
+          <button class="btn btn-danger-ghost btn-sm" onclick="deleteTaskFromList(${t.id}, event)" title="删除任务">${icon("delete")}</button>
+        </td>
+      </tr>`;
+  }).join("");
+}
+
 document.getElementById("open-create-task").addEventListener("click", openCreateTaskModal);
+
+// ============================================================
+// v2.1：任务列表搜索
+// ============================================================
+// 单条任务是否命中搜索词的判断
+// q 必须已经 trim + toLowerCase，unitById 是 id → unit 的 Map
+function matchTask(task, unitById, q) {
+  if (!q) return true;
+  // 数字字段：去掉输入里可能的 # 前缀
+  const qNum = q.replace(/^#/, "");
+  if (qNum && String(task.id).toLowerCase().includes(qNum)) return true;
+  // 任务名
+  if ((task.name || "").toLowerCase().includes(q)) return true;
+  // 单位名
+  const unit = unitById.get(task.unit_id);
+  if (unit && (unit.name || "").toLowerCase().includes(q)) return true;
+  return false;
+}
+
+// 应用当前 State.taskSearchQuery 到列表 + 更新 UI
+function applyTaskSearch() {
+  const q = (State.taskSearchQuery || "").trim().toLowerCase();
+  const unitById = new Map((State.units || []).map(u => [u.id, u]));
+  const tasks = State.tasks || [];
+  const matched = q ? tasks.filter(t => matchTask(t, unitById, q)) : tasks;
+  renderTasksBody(matched, State.units || []);
+  // 计数提示
+  const countEl = document.getElementById("task-search-count");
+  if (countEl) {
+    countEl.textContent = q ? `匹配 ${matched.length} / ${tasks.length} 条` : "";
+  }
+  // 清空按钮显隐
+  const clearBtn = document.getElementById("task-search-clear");
+  if (clearBtn) {
+    clearBtn.style.display = q ? "block" : "none";
+  }
+}
+
+// 输入 debounce + 清空按钮绑定
+let _taskSearchTimer;
+(function bindTaskSearch() {
+  const input = document.getElementById("task-search");
+  const clearBtn = document.getElementById("task-search-clear");
+  if (!input || input._bound) return;
+  input._bound = true;
+  input.addEventListener("input", () => {
+    clearTimeout(_taskSearchTimer);
+    _taskSearchTimer = setTimeout(() => {
+      State.taskSearchQuery = input.value;
+      applyTaskSearch();
+    }, 200);
+  });
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      input.value = "";
+      State.taskSearchQuery = "";
+      applyTaskSearch();
+      input.focus();
+    });
+  }
+})();
 
 // ============================================================
 // 创建任务模态
