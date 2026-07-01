@@ -308,8 +308,11 @@ def run_audit(db: Session, task: AuditTask) -> AuditTask:
         task.progress_text = "完成"
     except Exception as exc:
         task.status = "failed"
-        task.summary = f"核查失败：{exc}"
-        task.progress_text = f"失败：{exc}"[:256]
+        kind, summary = _classify_run_audit_error(exc)
+        task.summary = summary
+        task.progress_text = summary[:256]
+        # v2.2：分类打 log 便于运维定位（余额不足 vs 其它错误）
+        print(f"[run_audit] task {task.id} 失败 kind={kind} raw={exc}")
 
     db.commit()
     db.refresh(task)
