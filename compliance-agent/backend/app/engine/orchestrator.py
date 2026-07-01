@@ -32,6 +32,32 @@ def _ke_from_json(raw: str) -> KeyElements:
     return ke
 
 
+# v2.2：LLM 余额不足 / 402 类异常分类，输出用户友好的 task.summary
+_INSUFFICIENT_BALANCE_NEEDLES = (
+    "insufficient balance",
+    "insufficient_balance",
+    "error code: 402",
+    "payment required",
+    "余额不足",
+    "账户欠费",
+)
+
+
+def _classify_run_audit_error(exc: Exception) -> tuple[str, str]:
+    """把 run_audit 主循环抛出的异常分类成 (kind, user_facing_summary)。
+
+    kind: "insufficient_balance" 或 "generic"，用于 log 分类。
+    user_facing_summary: 显示在 AuditTask.summary 里的中文文案。
+    """
+    text = str(exc).lower()
+    if any(needle in text for needle in _INSUFFICIENT_BALANCE_NEEDLES):
+        return (
+            "insufficient_balance",
+            "LLM 服务余额不足，请联系管理员充值后重新运行任务。",
+        )
+    return ("generic", f"核查失败：{exc}")
+
+
 def _retrieve_legal_basis(indicator: Optional[Indicator]) -> str:
     """根据指标从 RAG 向量库召回法规条款（v3 §3.1、§3.4）。
 
