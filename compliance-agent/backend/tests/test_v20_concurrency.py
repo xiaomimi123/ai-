@@ -11,10 +11,21 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 
+import pytest
+
 # docker-compose.yml 在 compliance-agent/ 根，测试在 backend/tests/
+# 容器内跑测试时（/app/tests/），仓库根不存在，用 skip 语义处理
 DOCKER_COMPOSE = (
     Path(__file__).resolve().parents[2] / "docker-compose.yml"
 )
+
+
+def _require_compose_file():
+    """容器内没有 docker-compose.yml（只 COPY 了 backend/），skip 而非 fail。"""
+    if not DOCKER_COMPOSE.exists():
+        pytest.skip(
+            f"docker-compose.yml 不在 {DOCKER_COMPOSE}（可能在容器内跑）"
+        )
 
 
 # ============================================================
@@ -25,7 +36,7 @@ def test_backend_service_uses_multiple_uvicorn_workers():
 
     默认 Dockerfile CMD 走 workers=1 → 单进程串行处理，2-3 用户并发即卡。
     """
-    assert DOCKER_COMPOSE.exists(), f"未找到 {DOCKER_COMPOSE}"
+    _require_compose_file()
     text = DOCKER_COMPOSE.read_text(encoding="utf-8")
     assert "uvicorn" in text, "docker-compose 里没找到 uvicorn 相关命令"
     assert ("--workers 2" in text or "--workers=2" in text), (
@@ -77,6 +88,7 @@ def test_run_audit_task_uses_audit_queue():
 # ============================================================
 def test_docker_compose_has_enrich_worker_service():
     """docker-compose.yml 应有独立 enrich_worker 服务处理 enrich 队列。"""
+    _require_compose_file()
     text = DOCKER_COMPOSE.read_text(encoding="utf-8")
     assert "enrich_worker" in text, (
         "docker-compose.yml 缺少 enrich_worker 服务；"
@@ -93,6 +105,7 @@ def test_docker_compose_has_enrich_worker_service():
 
 def test_main_worker_only_handles_audit_queue():
     """主 worker 服务应只跑 audit 队列（不再吞掉默认 celery 队列的所有任务）。"""
+    _require_compose_file()
     text = DOCKER_COMPOSE.read_text(encoding="utf-8")
     # 找 `  worker:` 段（跟其它服务定义同一层缩进）
     idx = text.find("\n  worker:\n")
