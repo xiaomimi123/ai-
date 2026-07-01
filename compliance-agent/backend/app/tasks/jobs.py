@@ -9,7 +9,7 @@ import json
 from app.tasks.celery_app import celery_app
 
 
-@celery_app.task(name="audit.run")
+@celery_app.task(name="audit.run", queue="audit")
 def run_audit_task(task_id: int) -> int:
     from app.engine import run_audit
     from app.models import AuditTask, SessionLocal
@@ -27,7 +27,7 @@ def run_audit_task(task_id: int) -> int:
 # ============================================================
 # v1.9：material 异步增强（OCR + 形式审查），不阻塞上传响应
 # ============================================================
-@celery_app.task(name="material.enrich")
+@celery_app.task(name="material.enrich", queue="enrich")
 def enrich_material_task(material_id: int) -> dict:
     """v1.9：把 v1.3 的扫描件 OCR 和 v1.5 的形式审查搬到异步执行。
 

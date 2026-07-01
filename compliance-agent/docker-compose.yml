@@ -5,6 +5,9 @@
 services:
   backend:
     build: ./backend
+    # v2.0：uvicorn --workers 2 提升并发（默认 1 进程会在 2-3 用户并发上传时排队）
+    # 内存约束：单进程约 3 GiB，2 workers ≈ 6 GiB，服务器 7 GiB 够用
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     env_file: .env
     volumes:
       - ./backend/data:/app/data
@@ -69,10 +72,29 @@ services:
 
   worker:
     build: ./backend
-    command: celery -A app.tasks.celery_app worker -l info --concurrency=4
+    # v2.0：主 worker 专跑 audit 队列（run_audit_task LLM 重活）
+    # 拆队列后不再被扫描件 OCR 排队阻塞
+    command: celery -A app.tasks.celery_app worker -l info --queues=audit --concurrency=2
     env_file: .env
     environment:
       CELERY_EAGER: "false"   # 生产由 worker 进程异步消费
+    volumes:
+      - ./backend/data:/app/data
+      - storage_data:/app/storage
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+    restart: unless-stopped
+
+  enrich_worker:
+    build: ./backend
+    # v2.0：独立 worker 专跑 enrich 队列（扫描件 OCR + 形式审查）
+    # concurrency=4 让 OCR 慢调用批量并行；即使全部堵在 OCR 也不影响 audit worker
+    command: celery -A app.tasks.celery_app worker -l info --queues=enrich --concurrency=4 -n enrich@%h
+    env_file: .env
+    environment:
+      CELERY_EAGER: "false"
     volumes:
       - ./backend/data:/app/data
       - storage_data:/app/storage
