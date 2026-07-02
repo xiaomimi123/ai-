@@ -38,7 +38,7 @@ def get_llm_client(db: Optional[Session] = None) -> LLMClient:
             from app.llm.deepseek import DeepSeekClient
             return DeepSeekClient(
                 api_key=cfg["api_key"],
-                model=cfg.get("model") or "deepseek-v4-pro",
+                model=cfg.get("model") or "deepseek-v4-flash",
                 base_url=cfg.get("base_url") or "https://api.deepseek.com/v1",
                 thinking_mode=cfg.get("thinking_mode") or "non_think",
             )

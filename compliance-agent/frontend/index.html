@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>内控评价智能审核系统</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/styles.css?v=2.3" />
+  <link rel="stylesheet" href="/static/styles.css?v=2.4" />
 </head>
 <body>
 
@@ -692,7 +692,7 @@
                 <div class="console-section-head">
                   <h2 class="console-section-title">大语言模型接入</h2>
                   <p class="console-section-desc">
-                    配置 DeepSeek V4 Pro API Key 后立即生效，无需重启。
+                    配置 DeepSeek V4 Flash API Key 后立即生效，无需重启。
                     后端只存储 Key，前端永不回显明文。
                   </p>
                 </div>
@@ -704,7 +704,7 @@
                     </div>
                     <div class="kv-value">
                       <select name="provider" class="form-select">
-                        <option value="deepseek">DeepSeek V4 Pro（推荐）</option>
+                        <option value="deepseek">DeepSeek V4 Flash（推荐）</option>
                         <option value="claude">Claude（备选）</option>
                         <option value="stub">Stub（离线兜底，不调 LLM）</option>
                       </select>
@@ -716,7 +716,7 @@
                       <div class="kv-key-sub">模型字符串</div>
                     </div>
                     <div class="kv-value">
-                      <input name="model" class="form-input" placeholder="deepseek-v4-pro" />
+                      <input name="model" class="form-input" placeholder="deepseek-v4-flash" />
                     </div>
                   </div>
                   <div class="kv-row">
@@ -1292,7 +1292,7 @@
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
 
-<script src="/static/pinyin_initials.js?v=2.3"></script>
-<script src="/static/app.js?v=2.3"></script>
+<script src="/static/pinyin_initials.js?v=2.4"></script>
+<script src="/static/app.js?v=2.4"></script>
 </body>
 </html>

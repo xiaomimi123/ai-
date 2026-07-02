@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # provider: stub | deepseek | claude
     # 这些值是「默认值」，运行时管理员可通过 /api/settings/llm 在数据库覆盖
     llm_provider: str = "deepseek"
-    llm_model: str = "deepseek-v4-pro"
+    llm_model: str = "deepseek-v4-flash"
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_api_key: str = ""
     llm_thinking_mode: str = "non_think"   # non_think | think_high | think_max
