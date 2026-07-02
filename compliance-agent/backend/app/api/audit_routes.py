@@ -284,6 +284,12 @@ def run_task(task_id: int,
             400,
             "任务已完成核查。重新核查会清空已有疑点与工作底稿，请确认后带 force=true 参数",
         )
+    # v2.3：立即设 running 状态，让前端 loadTaskWorkspace 拿到新 status 后
+    # maybeStartProgressPolling 能立即启动轮询（避免用户看不到进度需 F5）
+    task.status = "running"
+    task.progress_text = "已提交，等待 worker 拾取…"
+    task.progress_current = 0
+    task.progress_total = 0
     log_action(db, user, "task.run",
                target_type="task", target_id=task.id,
                detail=f"触发 AI 核查（{len(task.materials)} 份材料"
