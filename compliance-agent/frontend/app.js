@@ -713,6 +713,7 @@ async function loadTaskWorkspace(taskId) {
 
     renderTaskActions(detail.task);
     renderProgress(detail.task);
+    renderRunButton(detail.task, detail.materials);   // v2.3
     renderSubtab();
     maybeStartProgressPolling(detail.task);
   } catch (e) { toast(e.message, "error"); }
@@ -749,6 +750,7 @@ function maybeStartProgressPolling(task) {
       const detail = await api(`/tasks/${taskId}`);
       State.taskDetail = detail;
       renderProgress(detail.task);
+      renderRunButton(detail.task, detail.materials);   // v2.3
       document.getElementById("tw-meta").innerHTML =
         `${esc(detail.unit.name)} · ${detail.task.eval_year} 年度 · ${statusBadge(detail.task.status)}`;
       if (detail.task.status !== "running") {
@@ -1504,6 +1506,34 @@ function renderScoreCard(task) {
   });
 }
 
+// v2.3：抽出的运行按钮渲染逻辑。task.status 变化时任何入口都能刷新按钮
+function renderRunButton(task, materials) {
+  const runBtn = document.getElementById("tw-run-btn");
+  if (!runBtn || !task) return;
+  const list = materials || [];
+  const total = list.length;
+  const bound = list.filter(m => m.indicator_id).length;
+  const allBound = total > 0 && bound === total;
+  const status = task.status;
+  if (status === "running") {
+    runBtn.disabled = true;
+    runBtn.innerHTML = `<span class="tw-progress-spinner" style="border-color:#cfdcf5;border-top-color:#fff;width:12px;height:12px"></span> <span>核查中…</span>`;
+    runBtn.title = "任务正在核查中，请等待完成";
+  } else if (["ai_done", "reviewing", "finalized", "archived"].includes(status)) {
+    runBtn.disabled = !allBound;
+    runBtn.innerHTML = `${icon("refresh")} <span>重新核查</span>`;
+    runBtn.title = allBound ? "重新核查将清空已有疑点与底稿" : `仍有 ${total - bound} 份材料未绑定指标`;
+  } else {
+    // 包含 failed / pending / 其它初始状态
+    runBtn.disabled = !allBound;
+    const label = status === "failed" ? "重新核查" : "触发 AI 核查";
+    runBtn.innerHTML = `${icon("play")} <span>${label}</span>`;
+    runBtn.title = allBound ? "" : `仍有 ${total - bound} 份材料未绑定指标`;
+  }
+  runBtn.style.opacity = runBtn.disabled ? "0.5" : "";
+  runBtn.style.cursor = runBtn.disabled ? "not-allowed" : "";
+}
+
 function renderMaterials() {
   const d = State.taskDetail;
   const indSel = document.getElementById("md-indicator");
@@ -1583,27 +1613,8 @@ function renderMaterials() {
     });
   });
 
-  // 触发核查按钮：按任务状态 + 绑定情况 动态切换
-  const runBtn = document.getElementById("tw-run-btn");
-  if (runBtn) {
-    const allBound = total > 0 && bound === total;
-    const status = d.task.status;
-    if (status === "running") {
-      runBtn.disabled = true;
-      runBtn.innerHTML = `<span class="tw-progress-spinner" style="border-color:#cfdcf5;border-top-color:#fff;width:12px;height:12px"></span> <span>核查中…</span>`;
-      runBtn.title = "任务正在核查中，请等待完成";
-    } else if (["ai_done", "reviewing", "finalized", "archived"].includes(status)) {
-      runBtn.disabled = !allBound;
-      runBtn.innerHTML = `${icon("refresh")} <span>重新核查</span>`;
-      runBtn.title = allBound ? "重新核查将清空已有疑点与底稿" : `仍有 ${total - bound} 份材料未绑定指标`;
-    } else {
-      runBtn.disabled = !allBound;
-      runBtn.innerHTML = `${icon("play")} <span>触发 AI 核查</span>`;
-      runBtn.title = allBound ? "" : `仍有 ${total - bound} 份材料未绑定指标`;
-    }
-    runBtn.style.opacity = runBtn.disabled ? "0.5" : "";
-    runBtn.style.cursor = runBtn.disabled ? "not-allowed" : "";
-  }
+  // v2.3：抽独立函数，让 loadTaskWorkspace + 轮询回调都能刷按钮
+  renderRunButton(d.task, d.materials);
 }
 
 // AI 自动绑定（关键词 + LLM 阅读两阶段）
@@ -1811,6 +1822,9 @@ document.getElementById("tw-run-btn").addEventListener("click", async () => {
   let url = `/tasks/${State.taskId}/run`;
   if (["ai_done", "reviewing", "finalized", "archived"].includes(status)) {
     if (!confirm("重新核查将清空已有疑点和工作底稿。\n\n确定继续吗？")) return;
+    url += "?force=true";
+  } else if (status === "failed") {
+    // v2.3：failed 无 finding/底稿可清，直接带 force 重跑，不弹确认
     url += "?force=true";
   }
   toast("AI 核查中…快速模式约 5 分钟、精确模式 10-15 分钟");
