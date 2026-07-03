@@ -117,10 +117,28 @@ def _user_can_see_task(user: User, task: AuditTask) -> bool:
 @tasks_router.get("", response_model=List[AuditTaskOut])
 def list_tasks(db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
-    q = db.query(AuditTask).order_by(AuditTask.id.desc())
+    # v2.6：defer(stats) 让 SQL 不 SELECT 大 JSON 列（1739 条 × 几 KB 序列化耗时）
+    # 手动映射 stats="" 避免 pydantic model_validate 触发 lazy load
+    # 详情端点 GET /api/tasks/{id} 用 db.get 拿全列，stats 仍完整
+    from sqlalchemy.orm import defer
+
+    q = db.query(AuditTask).options(defer(AuditTask.stats))\
+        .order_by(AuditTask.id.desc())
     if is_unit(user.role) and user.unit_id:
         q = q.filter(AuditTask.unit_id == user.unit_id)
-    return q.all()
+    tasks = q.all()
+    return [
+        AuditTaskOut(
+            id=t.id, unit_id=t.unit_id, name=t.name, eval_year=t.eval_year,
+            scope=t.scope, selected_indicator_ids=t.selected_indicator_ids,
+            status=t.status, summary=t.summary,
+            stats="",   # v2.6：列表页不用 stats，填空绕过 lazy load
+            progress_current=t.progress_current, progress_total=t.progress_total,
+            progress_text=t.progress_text, fast_mode=t.fast_mode,
+            created_at=t.created_at, completed_at=t.completed_at,
+        )
+        for t in tasks
+    ]
 
 
 @tasks_router.post("", response_model=AuditTaskOut)
