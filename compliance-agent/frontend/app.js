@@ -18,6 +18,7 @@ const State = {
   activeFindingId: null,
   consoleTab: "llm",
   taskSearchQuery: "",   // v2.1：任务列表搜索关键词（trim + toLowerCase 归一化）
+  checkItems: [],        // v2.6：问题清单缓存
 };
 
 // ============================================================
@@ -318,8 +319,13 @@ document.getElementById("quick-create-task").addEventListener("click", openCreat
 // ============================================================
 // 任务列表
 // ============================================================
-async function loadTasks() {
+async function loadTasks(force = false) {
   try {
+    // v2.6：State 缓存命中直接渲染，避免每次切页面重拉
+    if (!force && State.tasks.length && State.units.length) {
+      applyTaskSearch();
+      return;
+    }
     const [units, tasks] = await Promise.all([api("/units"), api("/tasks")]);
     State.units = units; State.tasks = tasks;
     applyTaskSearch();   // v2.1：应用当前搜索词，等价于全量渲染（空 query）
@@ -673,6 +679,7 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
       }),
     });
     document.getElementById("create-task-modal").classList.add("hidden");
+    State.tasks = [];   // v2.6：清空缓存，下次进任务列表能看到新任务
     const scopeLbl = scope === "all" ? "全部指标" : `${selectedIds.length} 个指标`;
     const modeLbl = fastMode ? " · 快速模式" : "";
     toast(`✓ 任务 #${pad(task.id)} 已创建（${scopeLbl}${modeLbl}）`, "success");
@@ -689,9 +696,12 @@ document.getElementById("task-create-form").addEventListener("submit", async ev 
 async function loadTaskWorkspace(taskId) {
   State.taskId = taskId;
   try {
-    const [detail, indicators] = await Promise.all([
-      api(`/tasks/${taskId}`), api("/indicators"),
-    ]);
+    // v2.6：indicators 用 State 缓存，避免每次进任务详情页重复拉
+    const detailP = api(`/tasks/${taskId}`);
+    const indicatorsP = State.indicators.length
+      ? Promise.resolve(State.indicators)
+      : api("/indicators");
+    const [detail, indicators] = await Promise.all([detailP, indicatorsP]);
     State.taskDetail = detail;
     State.indicators = indicators;
 
@@ -820,6 +830,7 @@ window.finalizeTask = async function() {
   if (!confirm("将任务定稿，之后只读？")) return;
   try {
     await api(`/tasks/${State.taskId}/finalize`, { method: "POST" });
+    State.tasks = [];   // v2.6：task.status 变了，清缓存让列表拉最新
     toast("✓ 已定稿", "success");
     loadTaskWorkspace(State.taskId);
   } catch (e) { toast(e.message, "error"); }
@@ -830,6 +841,7 @@ window.deleteTaskFromList = async function(taskId, ev) {
   if (!confirm(`确定删除任务 #${pad(taskId)}？\n\n会一并清理：\n· 任务下的所有材料文件\n· 所有 AI 核查发现（Finding）\n\n此操作不可恢复。`)) return;
   try {
     await api(`/tasks/${taskId}`, { method: "DELETE" });
+    State.tasks = [];   // v2.6：清缓存让 loadTasks 拉最新
     toast(`✓ 任务 #${pad(taskId)} 已删除`, "success");
     loadTasks();
   } catch (e) { toast(e.message, "error"); }
@@ -840,6 +852,7 @@ window.deleteCurrentTask = async function() {
   if (!confirm(`确定删除当前任务？\n\n会一并清理：\n· 任务下的所有材料文件\n· 所有 AI 核查发现\n\n此操作不可恢复。`)) return;
   try {
     await api(`/tasks/${State.taskId}`, { method: "DELETE" });
+    State.tasks = [];   // v2.6：清缓存
     toast(`✓ 任务已删除`, "success");
     navigate("#/tasks");
   } catch (e) { toast(e.message, "error"); }
@@ -1830,6 +1843,7 @@ document.getElementById("tw-run-btn").addEventListener("click", async () => {
   toast("AI 核查中…快速模式约 5 分钟、精确模式 10-15 分钟");
   try {
     await api(url, { method: "POST" });
+    State.tasks = [];   // v2.6：任务状态变 running，清缓存让列表拉最新
     // 立即拉一下让进度条出现
     await loadTaskWorkspace(State.taskId);
   } catch (e) { toast(e.message, "error"); }
@@ -2919,7 +2933,13 @@ document.getElementById("reg-upload-form").addEventListener("submit", async ev =
 // ============================================================
 let _indCache = [];
 
-async function loadIndicators() {
+async function loadIndicators(force = false) {
+  // v2.6：State 缓存命中跳过 fetch
+  if (!force && State.indicators.length) {
+    _indCache = State.indicators;
+    renderIndicators();
+    return;
+  }
   const inds = await api("/indicators");
   State.indicators = inds;
   _indCache = inds;
@@ -3030,6 +3050,8 @@ window.deleteIndicator = async function(id, code) {
   if (!confirm(`确定删除评价指标「${code}」？`)) return;
   try {
     await api(`/indicators/${id}`, { method: "DELETE" });
+    State.indicators = [];   // v2.6：清缓存
+    _indCache = null;
     toast("✓ 已删除", "success");
     loadIndicators();
   } catch (e) { toast(e.message, "error"); }
@@ -3052,8 +3074,15 @@ bindIndFilters();
 
 let _ciCache = [];
 
-async function loadCheckItems() {
+async function loadCheckItems(force = false) {
+  // v2.6：State 缓存命中跳过 fetch
+  if (!force && State.checkItems.length) {
+    _ciCache = State.checkItems;
+    renderCheckItems();
+    return;
+  }
   const items = await api("/check-items");
+  State.checkItems = items;
   _ciCache = items;
   renderCheckItems();
 }
@@ -3236,6 +3265,8 @@ window.deleteCheckItem = async function(id, code) {
   if (!confirm(`确定删除问题清单「${code}」？（软删，可在管理端恢复）`)) return;
   try {
     await api(`/check-items/${id}`, { method: "DELETE" });
+    State.checkItems = [];   // v2.6：清缓存
+    _ciCache = null;
     toast("✓ 已删除", "success");
     loadCheckItems();
   } catch (e) { toast(e.message, "error"); }
@@ -3874,6 +3905,8 @@ window.deleteUnit = async function(unitId, name) {
   if (!confirm(`确定删除单位「${name}」？\n\n如有关联任务必须先删除任务。`)) return;
   try {
     await api(`/units/${unitId}`, { method: "DELETE" });
+    State.units = [];   // v2.6：清缓存
+    State.tasks = [];   // 关联任务被清，同步清 tasks 缓存
     toast(`✓ 已删除单位「${name}」`, "success");
     await loadUnitsConsole();
   } catch (e) {
