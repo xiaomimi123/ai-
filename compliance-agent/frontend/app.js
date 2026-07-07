@@ -437,10 +437,16 @@ let _taskSearchTimer;
 // ============================================================
 async function openCreateTaskModal() {
   try {
-    const [units, indicators] = await Promise.all([
-      api("/units"),
-      api("/indicators"),
-    ]);
+    // v2.7：State 缓存命中跳过 fetch（与 v2.6 loadTaskWorkspace 模式一致）
+    // 修复：之前每次点击都拉 units（5278 条 ~5s）+ indicators + 覆盖 State
+    // 覆盖后拼音首字母 _initials 全丢，pinyinInitials 每次重算 5278 个
+    const unitsP = State.units.length
+      ? Promise.resolve(State.units)
+      : api("/units");
+    const indicatorsP = State.indicators.length
+      ? Promise.resolve(State.indicators)
+      : api("/indicators");
+    const [units, indicators] = await Promise.all([unitsP, indicatorsP]);
     State.units = units;
     State.indicators = indicators;
     // 给每个单位预算拼音首字母（缓存在 _initials 字段，只算一次）
