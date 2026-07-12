@@ -44,6 +44,8 @@ app.include_router(units_router)
 app.include_router(tasks_router)
 app.include_router(findings_router)
 app.include_router(materials_router)
+from app.api.export_routes import exports_router
+app.include_router(exports_router)
 
 
 @app.on_event("startup")
