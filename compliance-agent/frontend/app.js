@@ -397,8 +397,10 @@ async function _downloadCityZip(city, btn) {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+    // 注：toast() 用 textContent 输出，不需要 esc() —— 用 esc() 反而会双重转义
     toast(`${city} 下载完成`);
   } catch (e) {
+    // 同上：toast 用 textContent，esc 会双转义
     toast(`下载出错：${e.message}`, "error");
   } finally {
     btn.disabled = false;
