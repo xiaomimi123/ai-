@@ -72,21 +72,27 @@ def find_wrong_bindings(db: Session) -> list[tuple[Material, Indicator]]:
     return to_fix
 
 
-def dump_backup(to_fix: list[tuple[Material, Indicator]], path: str) -> None:
+def dump_backup(to_fix: list[tuple[Material, Indicator]], path: str, db: Session) -> None:
     """把当前 material.id + 原 indicator_id 备份成可回滚 SQL。
+
+    同时备份 finding：rebind 会把 finding.indicator_id 从 old 同步到 new，
+    回滚 SQL 里也要写 finding 的反向 UPDATE。
 
     若目标文件已存在，将其重命名为 path.old-YYYYMMDDHHMMSS 以保留历史备份。
     """
     if os.path.exists(path):
-        stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         old_path = f"{path}.old-{stamp}"
         os.rename(path, old_path)
 
     with open(path, "w") as f:
         f.write(f"-- v2.8 rebind backup {datetime.now(timezone.utc).isoformat()}\n")
-        f.write(f"-- 共 {len(to_fix)} 条\n\n")
-        for m, _ in to_fix:
-            f.write(f"UPDATE materials SET indicator_id = {m.indicator_id} WHERE id = {m.id};\n")
+        f.write(f"-- 共 {len(to_fix)} 条 material + 对应 finding\n\n")
+        for m, target in to_fix:
+            old_ind_id = m.indicator_id
+            f.write(f"UPDATE materials SET indicator_id = {old_ind_id} WHERE id = {m.id};\n")
+            f.write(f"UPDATE findings SET indicator_id = {old_ind_id} "
+                    f"WHERE material_id = {m.id} AND indicator_id = {target.id};\n")
 
 
 def report_impact(to_fix: list[tuple[Material, Indicator]], db: Session) -> None:
@@ -119,12 +125,12 @@ def run(db: Session, dry_run: bool, batch: int = 500) -> dict:
 
     backup_path = "/app/data/v28_rebind_backup.sql"
     try:
-        dump_backup(to_fix, backup_path)
+        dump_backup(to_fix, backup_path, db)
         print(f"原绑定已备份到 {backup_path}")
     except OSError as e:
         # 单测/本地跑 /app/data 不存在，退化到 /tmp
         backup_path = "/tmp/v28_rebind_backup.sql"
-        dump_backup(to_fix, backup_path)
+        dump_backup(to_fix, backup_path, db)
         print(f"原绑定已备份到 {backup_path}（fallback）: {e!s}")
 
     updated_mats = 0

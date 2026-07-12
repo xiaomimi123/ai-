@@ -93,3 +93,25 @@ def test_second_level_unknown_falls_back_to_protocol():
     assert ind is not None and ind.indicator_code == "I-44"
     assert conf == "medium"
     assert src == "path+protocol_fallback"
+
+
+def test_second_level_tiebreak_gangwei_wins_over_zhidu():
+    """路径同时含"岗位职责说明"和"管理制度"→ SECOND_LEVEL_KEYWORDS 顺序优先，gangwei 先命中。
+
+    保护 SECOND_LEVEL_KEYWORDS 顺序：如未来有人调整顺序把 zhidu 放到 gangwei 前，
+    这个测试会失败，明确警告不能改变优先级。
+    """
+    from app.services.material_matcher import match_indicator_by_path_and_content
+    inds = [
+        _fake_ind("I-44", "（六）合同控制", ["合同管理制度"], "合同制度"),
+        _fake_ind("I-45", "（六）合同控制", [], "合同岗位分离"),
+    ]
+    ind, conf, src = match_indicator_by_path_and_content(
+        "某单位/（六）合同控制/合同管理制度的岗位职责说明/mixed.pdf",
+        "mixed.pdf",
+        "",
+        inds,
+    )
+    # 岗位职责说明在 SECOND_LEVEL_KEYWORDS 里排在管理制度前 → gangwei 先命中 → I-45
+    assert ind is not None and ind.indicator_code == "I-45"
+    assert src == "path+second_level"

@@ -98,6 +98,7 @@ def test_apply_updates_material_indicator(db_session):
 def test_apply_syncs_finding_indicator(db_session):
     """--apply 同步改 finding.indicator_id 到新的岗位分离指标。"""
     from app.scripts.rebind_wrong_bindings_v28 import run
+    import os
     i44, i45 = _seed_indicators(db_session)
     tid = _seed_task(db_session)
     m = Material(
@@ -118,6 +119,17 @@ def test_apply_syncs_finding_indicator(db_session):
     db_session.refresh(f)
     assert result["updated_findings"] == 1
     assert f.indicator_id == i45.id
+
+    # 备份文件位置：apply 时先尝试 /app/data，失败退化到 /tmp
+    for candidate in ["/app/data/v28_rebind_backup.sql", "/tmp/v28_rebind_backup.sql"]:
+        if os.path.exists(candidate):
+            with open(candidate) as bf:
+                content = bf.read()
+            assert f"UPDATE materials SET indicator_id = {i44.id} WHERE id = {m.id}" in content
+            assert f"UPDATE findings SET indicator_id = {i44.id} WHERE material_id = {m.id} AND indicator_id = {i45.id}" in content
+            break
+    else:
+        pytest.fail("backup SQL 文件未生成到 /app/data 或 /tmp")
 
 
 def test_idempotent_second_run_zero(db_session):
