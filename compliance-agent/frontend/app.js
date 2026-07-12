@@ -1566,6 +1566,18 @@ function _initMaterialSearch() {
     _filterMaterialRows("");
     searchInput.focus();
   });
+  // v2.9: 文件名链接 hover 下划线（事件委托到 tbody，不用每次 render 重绑）
+  const tbody = document.getElementById("tw-materials-tbody");
+  if (tbody) {
+    tbody.addEventListener("mouseover", (ev) => {
+      const a = ev.target.closest("a.tw-material-file-link");
+      if (a) a.style.textDecoration = "underline";
+    });
+    tbody.addEventListener("mouseout", (ev) => {
+      const a = ev.target.closest("a.tw-material-file-link");
+      if (a) a.style.textDecoration = "none";
+    });
+  }
   _materialSearchInited = true;
 }
 
@@ -1579,6 +1591,11 @@ function _filterMaterialRows(keyword) {
   const rows = Array.from(tbody.querySelectorAll("tr")).filter(r => r !== emptyHit);
   let shown = 0;
   rows.forEach(row => {
+    // 非材料行（如"尚未上传材料"占位）没有 data-search-index → 始终显示，不计入 shown
+    if (!row.hasAttribute("data-search-index")) {
+      row.style.display = "";
+      return;
+    }
     if (!kw) {
       row.style.display = "";
       shown++;
@@ -1598,7 +1615,8 @@ function _filterMaterialRows(keyword) {
     countEl.innerHTML = `共 <strong>${rows.length}</strong> 份 · 显示 <strong>${shown}</strong> 份`;
   }
   // 空态处理：搜索有关键词但零命中 → 显示；否则隐藏
-  if (kw && shown === 0) {
+  const hasRealMaterials = rows.some(r => r.hasAttribute("data-search-index"));
+  if (kw && shown === 0 && hasRealMaterials) {
     if (emptyHit) {
       emptyHit.style.display = "";
     } else {
@@ -1671,9 +1689,8 @@ function renderMaterials() {
       <td><span class="code-id">#${pad(m.id)}</span></td>
       <td style="font-weight:500;word-break:break-all">
         <a href="/api/materials/${m.id}/preview" target="_blank" rel="noopener"
+           class="tw-material-file-link"
            style="color:#0071e3;text-decoration:none"
-           onmouseover="this.style.textDecoration='underline'"
-           onmouseout="this.style.textDecoration='none'"
            title="点击在新标签页打开 / 下载">${esc(m.file_name)}</a>
       </td>
       <td>
