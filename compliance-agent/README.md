@@ -47,3 +47,8 @@ docker compose exec backend python -m app.init_db
 两种方式（任一即可）：
 1. **环境变量**：`.env` 设置 `LLM_API_KEY=sk-...`
 2. **后台界面**：登录后进「系统设置」页填入 DeepSeek API Key（覆盖环境变量）
+
+## 更新日志（部分）
+
+- **v2.8（2026-07-12）**：`material_matcher` 加二级文件夹语义识别，识别"XX业务/岗位职责说明书"类路径 → 岗位分离指标（I-14/21/26/33/38/45），修复 v1.5 之后 fallback 到"制度"类的错绑；配套 `app/scripts/rebind_wrong_bindings_v28.py` 一次性 rebind 历史存量。详见 `docs/superpowers/plans/2026-07-12-*.md`
+- 更早版本变更见 `docs/superpowers/plans/` / `docs/superpowers/specs/`
