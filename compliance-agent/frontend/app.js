@@ -284,6 +284,9 @@ async function loadDashboard() {
 
     document.getElementById("dash-system-status").textContent =
       `${health.app} · LLM ${health.llm_default_provider} · 向量库 ${health.vector_store}`;
+
+    // v2.11: 工作台批量导出按市分组
+    renderExportRegion();
   } catch (e) { console.error(e); }
 }
 
@@ -312,6 +315,95 @@ function statusBadge(status) {
   };
   const [cls, label] = map[status] || ['badge badge-gray', status];
   return `<span class="${cls}">${label}</span>`;
+}
+
+// v2.11: 工作台批量导出已定稿工作底稿（按市分组）
+async function renderExportRegion() {
+  const box = document.getElementById("dash-export-region");
+  if (!box) return;
+  try {
+    const rows = await api("/exports/region-summary");
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty-state" style="padding:16px">暂无已定稿任务可导出</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <table class="table table-compact">
+        <thead>
+          <tr>
+            <th>市</th>
+            <th style="width:100px">任务数</th>
+            <th style="width:100px">单位数</th>
+            <th style="width:160px">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => {
+            const cityLabel = r.unknown
+              ? `<span class="text-muted">${esc(r.city)}</span> <span class="badge badge-orange" style="font-size:10px">解析失败</span>`
+              : `<strong>${esc(r.city)}</strong>`;
+            return `<tr>
+              <td>${cityLabel}</td>
+              <td>${r.task_count}</td>
+              <td>${r.unit_count}</td>
+              <td>
+                <button class="btn btn-secondary btn-sm dash-export-btn"
+                        data-city="${esc(r.city)}"
+                        title="下载 ${esc(r.city)} 的 ${r.task_count} 份底稿 zip">
+                  下载 zip
+                </button>
+              </td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+    // 事件绑定
+    box.querySelectorAll(".dash-export-btn").forEach(btn => {
+      btn.addEventListener("click", () => _downloadCityZip(btn.dataset.city, btn));
+    });
+  } catch (e) {
+    box.innerHTML = `<div class="empty-state" style="padding:16px;color:#b8262b">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+// v2.11: 下载某市的 zip（fetch+blob 携带 Bearer token，避 <a href> 401）
+async function _downloadCityZip(city, btn) {
+  const origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="tw-progress-spinner" style="border-color:#ccc;border-top-color:#0071e3"></span> 打包中…`;
+  try {
+    const token = localStorage.getItem("audit.token") || "";
+    const url = `/api/exports/worksheets/city/${encodeURIComponent(city)}.zip`;
+    const r = await fetch(url, {
+      headers: { "Authorization": `Bearer ${token}` },
+    });
+    if (!r.ok) {
+      const msg = r.status === 401
+        ? "请重新登录"
+        : `下载失败 (${r.status}): ${await r.text()}`;
+      toast(msg, "error");
+      return;
+    }
+    const blob = await r.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+    const name = m ? decodeURIComponent(m[1]) : `${city}_已定稿工作底稿.zip`;
+    const a = document.createElement("a");
+    a.href = objUrl;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+    toast(`${city} 下载完成`);
+  } catch (e) {
+    toast(`下载出错：${e.message}`, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+  }
 }
 
 document.getElementById("quick-create-task").addEventListener("click", openCreateTaskModal);
