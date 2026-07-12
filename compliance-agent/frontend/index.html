@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>内控评价智能审核系统</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/styles.css?v=2.9" />
+  <link rel="stylesheet" href="/static/styles.css?v=2.10" />
 </head>
 <body>
 
@@ -446,8 +446,9 @@
             <div id="mr-dup-content"></div>
           </div>
 
-          <!-- 内容审核 -->
-          <div class="card mb-4">
+          <!-- v2.10: 内容审核 panel 临时隐藏（下版本可能改回，删下方 style="display:none" 即恢复）
+               后端 data.content_review 仍生成、renderMrContent 仍执行；只是 UI 不可见。 -->
+          <div class="card mb-4" style="display:none">
             <div class="section-title">内容审核（每份材料的关键要素与判定）</div>
             <div class="text-sm text-muted mb-3">系统自动抽取 公章 / 签字 / 日期 / 文号；AI 给出 5 对维度判定。</div>
             <div style="overflow-x:auto">
@@ -1305,7 +1306,7 @@
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
 
-<script src="/static/pinyin_initials.js?v=2.9"></script>
-<script src="/static/app.js?v=2.9"></script>
+<script src="/static/pinyin_initials.js?v=2.10"></script>
+<script src="/static/app.js?v=2.10"></script>
 </body>
 </html>
