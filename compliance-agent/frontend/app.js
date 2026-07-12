@@ -1582,6 +1582,9 @@ function _initMaterialSearch() {
       const a = ev.target.closest("a.tw-material-file-link");
       if (!a) return;
       ev.preventDefault();
+      // v2.9 review: 防连击 —— 已有 fetch 在飞时忽略后续 click
+      if (a.dataset.opening === "1") return;
+      a.dataset.opening = "1";
       // 先同步打开空白 tab（避 Chrome popup blocker）
       const newTab = window.open("about:blank", "_blank");
       const href = a.getAttribute("href");
@@ -1619,11 +1622,14 @@ function _initMaterialSearch() {
             window.open(objUrl, "_blank");
           }
         }
-        // blob URL 60 秒后 revoke（够加载完页面）
-        setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+        // v2.9 review: 60s 太短，大 PDF 用户还没读完就 revoke → refresh 404
+        // 30 分钟够读完；tab 关掉后浏览器会自然 GC
+        setTimeout(() => URL.revokeObjectURL(objUrl), 30 * 60 * 1000);
       } catch (e) {
         if (newTab) newTab.close();
         if (typeof toast === "function") { toast(`打开失败：${e.message}`, "error"); } else { alert(`打开失败：${e.message}`); }
+      } finally {
+        delete a.dataset.opening;
       }
     });
   }
@@ -1640,7 +1646,7 @@ function _filterMaterialRows(keyword) {
   const rows = Array.from(tbody.querySelectorAll("tr")).filter(r => r !== emptyHit);
   let shown = 0;
   rows.forEach(row => {
-    // 非材料行（如"尚未上传材料"占位）没有 data-search-index → 始终显示，不计入 shown
+    // 非材料行（如"尚未上传材料"占位 / 搜索零命中"无匹配材料"）没有 data-search-index → 始终显示，不计入 shown
     if (!row.hasAttribute("data-search-index")) {
       row.style.display = "";
       return;
@@ -1708,10 +1714,14 @@ function renderMaterials() {
     }
   }
 
+  // v2.9: 初始化搜索框（在 empty-return 之前，0 材料也能用搜索）
+  _initMaterialSearch();
+
   const tbody = document.getElementById("tw-materials-tbody");
   if (!d.materials.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">
+    tbody.innerHTML = `<tr class="tw-material-empty-placeholder"><td colspan="5" class="empty-state">
       <div class="empty-state-glyph">⊕</div>尚未上传材料</td></tr>`;
+    _filterMaterialRows("");
     return;
   }
   // 下拉选项缓存（55 项）
@@ -1770,8 +1780,7 @@ function renderMaterials() {
     });
   });
 
-  // v2.9: init 搜索（idempotent）+ tbody 重渲染后复用当前搜索值
-  _initMaterialSearch();
+  // v2.9: tbody 重渲染后复用当前搜索值
   const _searchInput = document.getElementById("tw-material-search");
   _filterMaterialRows(_searchInput ? _searchInput.value : "");
 

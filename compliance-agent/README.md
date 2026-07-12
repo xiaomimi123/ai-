@@ -50,6 +50,6 @@ docker compose exec backend python -m app.init_db
 
 ## 更新日志（部分）
 
-- **v2.9（2026-07-12）**：材料绑定页加即时搜索框（匹配文件名 + 已绑定指标 name/code）+ 文件名点击新 tab 打开预览。前端 fetch+blob 携带 Bearer token，复用后端已有的 `GET /api/materials/{id}/preview` 端点。详见 `docs/superpowers/plans/2026-07-12-material-search-and-open.md`
+- **v2.9（2026-07-12）**：材料绑定页加即时搜索框（匹配文件名 + 已绑定指标 name/code）+ 文件名点击新 tab 打开预览。前端 fetch+blob 携带 Bearer token（SPA localStorage token + 新 tab 天然不带 auth 的规避方案），复用后端已有的 `GET /api/materials/{id}/preview` 端点。**部署后已打开的旧 tab 需要硬刷（Cmd+Shift+R）加载新 app.js。** 详见 `docs/superpowers/plans/2026-07-12-material-search-and-open.md`
 - **v2.8（2026-07-12）**：`material_matcher` 加二级文件夹语义识别，识别"XX业务/岗位职责说明书"类路径 → 岗位分离指标（I-14/21/26/33/38/45），修复 v1.5 之后 fallback 到"制度"类的错绑；配套 `app/scripts/rebind_wrong_bindings_v28.py` 一次性 rebind 历史存量。详见 `docs/superpowers/plans/2026-07-12-*.md`
 - 更早版本变更见 `docs/superpowers/plans/` / `docs/superpowers/specs/`
