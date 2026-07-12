@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from collections import Counter
 from datetime import datetime, timezone
@@ -72,7 +73,15 @@ def find_wrong_bindings(db: Session) -> list[tuple[Material, Indicator]]:
 
 
 def dump_backup(to_fix: list[tuple[Material, Indicator]], path: str) -> None:
-    """把当前 material.id + 原 indicator_id 备份成可回滚 SQL。"""
+    """把当前 material.id + 原 indicator_id 备份成可回滚 SQL。
+
+    若目标文件已存在，将其重命名为 path.old-YYYYMMDDHHMMSS 以保留历史备份。
+    """
+    if os.path.exists(path):
+        stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        old_path = f"{path}.old-{stamp}"
+        os.rename(path, old_path)
+
     with open(path, "w") as f:
         f.write(f"-- v2.8 rebind backup {datetime.now(timezone.utc).isoformat()}\n")
         f.write(f"-- 共 {len(to_fix)} 条\n\n")
@@ -122,19 +131,23 @@ def run(db: Session, dry_run: bool, batch: int = 500) -> dict:
     updated_findings = 0
     for i in range(0, len(to_fix), batch):
         chunk = to_fix[i:i + batch]
-        for m, target in chunk:
-            old_ind_id = m.indicator_id
-            f_updated = (
-                db.query(Finding)
-                .filter(Finding.material_id == m.id,
-                        Finding.indicator_id == old_ind_id)
-                .update({Finding.indicator_id: target.id},
-                        synchronize_session=False)
-            )
-            updated_findings += f_updated
-            m.indicator_id = target.id
-            updated_mats += 1
-        db.commit()
+        try:
+            for m, target in chunk:
+                old_ind_id = m.indicator_id
+                f_updated = (
+                    db.query(Finding)
+                    .filter(Finding.material_id == m.id,
+                            Finding.indicator_id == old_ind_id)
+                    .update({Finding.indicator_id: target.id},
+                            synchronize_session=False)
+                )
+                updated_findings += f_updated
+                m.indicator_id = target.id
+                updated_mats += 1
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         print(f"  已处理 {i + len(chunk)}/{len(to_fix)}")
 
     print()

@@ -161,3 +161,34 @@ def test_non_target_material_untouched(db_session):
     assert result["updated_materials"] == 0
     assert m1.indicator_id == i44.id
     assert m2.indicator_id == i44.id
+
+
+def test_apply_rolls_back_on_error(db_session, monkeypatch):
+    """模拟 DB 提交时 raise，验证 material.indicator_id 没被半改。"""
+    from app.scripts.rebind_wrong_bindings_v28 import run
+    i44, i45 = _seed_indicators(db_session)
+    tid = _seed_task(db_session)
+    m = Material(
+        task_id=tid, indicator_id=i44.id,
+        file_name="（六）合同控制/合同管理的岗位职责说明书/xx.pdf",
+        storage_path="/tmp/xx.pdf",
+    )
+    db_session.add(m)
+    db_session.commit()
+    original_id = m.indicator_id
+
+    def bad_commit():
+        raise RuntimeError("simulated DB failure")
+    monkeypatch.setattr(db_session, "commit", bad_commit)
+
+    with pytest.raises(RuntimeError):
+        run(db_session, dry_run=False)
+
+    # commit 被 patch，但 rollback 应该被调用过；
+    # 换 fresh session 读 DB 验证没有 half-applied 状态
+    fresh = SessionLocal()
+    try:
+        reloaded = fresh.query(Material).filter(Material.id == m.id).first()
+        assert reloaded.indicator_id == original_id, "material 不应有半改状态"
+    finally:
+        fresh.close()
