@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import zipfile
 from collections import defaultdict
 from urllib.parse import quote
@@ -20,6 +21,8 @@ from app.models import AuditTask, AuditUnit, User, get_db
 from app.services.region_parser import parse_region
 from app.services.worksheet_export import build_worksheet_xlsx
 from app.services.worksheet_service import get_worksheet
+
+logger = logging.getLogger(__name__)
 
 exports_router = APIRouter(prefix="/api/exports", tags=["exports"])
 
@@ -94,19 +97,25 @@ def download_city_zip(
         raise HTTPException(404, f"'{city}' 下无已定稿任务")
 
     buf = io.BytesIO()
+    written = 0
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for task, unit_name, district in match_rows:
             ws = get_worksheet(db, task.id)
             if not ws:
-                continue  # 定稿但 worksheet 缺失（异常状态），跳过
+                logger.warning(
+                    "finalized task %s (unit=%s) has no worksheet, skipped",
+                    task.id, unit_name,
+                )
+                continue
             xlsx_bytes = build_worksheet_xlsx(db, task, ws)
             dist_dir = district or "_未分类"
             # 路径注入防御：sanitize 单位名
             safe_unit = unit_name.replace("/", "_").replace("\\", "_")
             entry = f"{city}/{dist_dir}/{safe_unit}_{task.eval_year}_{task.id}.xlsx"
             zf.writestr(entry, xlsx_bytes)
+            written += 1
     buf.seek(0)
-    filename = f"{city}_已定稿工作底稿_{len(match_rows)}份.zip"
+    filename = f"{city}_已定稿工作底稿_{written}份.zip"
     filename_quoted = quote(filename)
     return StreamingResponse(
         buf,
