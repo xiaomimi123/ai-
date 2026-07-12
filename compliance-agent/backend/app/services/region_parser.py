@@ -30,12 +30,16 @@ def parse_region(unit_name: str) -> tuple[Optional[str], Optional[str]]:
     """从单位名提取 (市, 区县)。"""
     if not unit_name:
         return (None, None)
-    # 直辖市优先
-    for muni in MUNICIPALITIES:
-        if muni in unit_name:
-            after_muni = unit_name.split(muni, 1)[-1]
-            m = _DISTRICT_RE.search(after_muni)
-            return (muni, m.group(1) if m else None)
+    # 直辖市优先（多个直辖市 substring 命中时按首次出现位置最早的赢，避免 set 迭代序不确定性）
+    found_muni = min(
+        (m for m in MUNICIPALITIES if m in unit_name),
+        key=lambda m: unit_name.index(m),
+        default=None,
+    )
+    if found_muni:
+        after_muni = unit_name.split(found_muni, 1)[-1]
+        m = _DISTRICT_RE.search(after_muni)
+        return (found_muni, m.group(1) if m else None)
     # 剥离省级前缀（如"四川省"、"内蒙古自治区"），再匹配市
     remaining = _PROVINCE_RE.sub("", unit_name)
     city_m = _CITY_RE.search(remaining)

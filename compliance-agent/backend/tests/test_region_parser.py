@@ -42,3 +42,11 @@ def test_parse_no_city_pattern():
     """无市字样：某某局 → (None, None)。"""
     from app.services.region_parser import parse_region
     assert parse_region("某某局") == (None, None)
+
+
+def test_parse_multiple_municipalities_picks_earliest():
+    """病理输入：单位名含多个直辖市 substring，按首次出现位置最早的赢，
+    保证跨 Python 运行的确定性（避免 set 迭代序不确定）。"""
+    from app.services.region_parser import parse_region
+    # "上海市浦东新区北京市" —— 上海市在前，应选上海市，district=浦东新区
+    assert parse_region("上海市浦东新区北京市") == ("上海市", "浦东新区")
