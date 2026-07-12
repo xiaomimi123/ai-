@@ -93,10 +93,13 @@ from typing import Optional
 # 直辖市（跳过省级匹配）
 MUNICIPALITIES = {"北京市", "上海市", "天津市", "重庆市"}
 
-# 市匹配：XX市 / XX自治州 / XX地区 / XX盟
-_CITY_RE = re.compile(r"([一-龥]{1,10}?(?:市|自治州|地区|盟))")
+# 省级前缀（省 / 自治区）—— 剥离后再匹配市，避免非贪婪 _CITY_RE
+# 在 "四川省达州市..." 上把整段 "四川省达州市" 吞成 city 的 bug
+_PROVINCE_RE = re.compile(r"^[一-龥]{2,10}?(?:省|自治区)")
+# 市匹配：XX市 / XX自治州 / XX地区 / XX盟；限 2-6 字防过匹配
+_CITY_RE = re.compile(r"([一-龥]{2,6}?(?:市|自治州|地区|盟))")
 # 区县匹配：XX区 / XX县 / XX自治县 / XX旗
-_DISTRICT_RE = re.compile(r"([一-龥]{1,10}?(?:区|县|自治县|旗))")
+_DISTRICT_RE = re.compile(r"([一-龥]{2,6}?(?:区|县|自治县|旗))")
 
 
 def parse_region(unit_name: str) -> tuple[Optional[str], Optional[str]]:
@@ -109,12 +112,13 @@ def parse_region(unit_name: str) -> tuple[Optional[str], Optional[str]]:
             after_muni = unit_name.split(muni, 1)[-1]
             m = _DISTRICT_RE.search(after_muni)
             return (muni, m.group(1) if m else None)
-    # 普通市
-    city_m = _CITY_RE.search(unit_name)
+    # 剥离省级前缀（如"四川省"、"内蒙古自治区"），再匹配市
+    remaining = _PROVINCE_RE.sub("", unit_name)
+    city_m = _CITY_RE.search(remaining)
     if not city_m:
         return (None, None)
     city = city_m.group(1)
-    after_city = unit_name[city_m.end():]
+    after_city = remaining[city_m.end():]
     dist_m = _DISTRICT_RE.search(after_city)
     return (city, dist_m.group(1) if dist_m else None)
 ```
