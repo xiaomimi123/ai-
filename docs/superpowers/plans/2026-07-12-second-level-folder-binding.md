@@ -317,6 +317,15 @@ EOF
   - 函数 `run(db, dry_run: bool, batch: int = 500) -> dict`（返回 `{"matched": N, "updated_materials": M, "updated_findings": K}`）
   - CLI 入口：`python -m app.scripts.rebind_wrong_bindings_v28 --dry-run|--apply`
 
+**IMPORTANT — actual model fields**（校对过 `app/models/entities.py`）：
+- `Material`：`task_id`, `indicator_id`, `file_name`, `storage_path`, `file_type`, `is_scanned`, `key_elements`, `parsed_text`, `content_hash`, `content_fingerprint`, `created_at`。**没有** `unit_id`（unit 关系挂在 AuditTask 上），**没有** `file_path`（用 `storage_path`）
+- `Finding`：`task_id`, `material_id`, `indicator_id`, `check_item_id`, `finding_type`, `severity`（值域 `高|中|低`，默认 `中`）, `description`, `evidence_location`, `legal_basis`, `suggestion`, `source`, `review_status`, `reviewer_id`, `review_note`, `reviewed_at`, `rectification_status`, `rectification_note`, `rectified_at`。**没有** `unit_id`
+- 表名（用于 backup SQL）：**`materials`** / **`findings`** / **`indicators`**（复数）
+- `Indicator`：`id`, `indicator_code`, `name`, `category`, `subcategory`, `required_materials`
+- 导入路径：`from app.models import SessionLocal, Base, engine, Material, Finding, Indicator`
+
+**Fixture 策略**：conftest.py 已把 `DATABASE_URL` 设为临时 SQLite（`sqlite:///{tempdir}/test.db`）。tests 用一个共享的清理型 fixture：每个测试跑完 delete 掉自己建的行，避免测试间干扰。
+
 - [ ] **Step 1: Write failing test — dry-run 只统计不改**
 
 新建 `compliance-agent/backend/tests/test_rebind_v28.py`：
@@ -324,7 +333,7 @@ EOF
 ```python
 """v2.8 rebind_wrong_bindings 脚本单测。
 
-用 conftest 的临时 SQLite DB fixture，避免动生产 postgres。
+conftest.py 已把 DATABASE_URL 指向临时 SQLite，本文件用 SessionLocal 直接建/清数据。
 覆盖：
 - dry-run 只统计不改
 - --apply 实际改 material.indicator_id
@@ -334,12 +343,27 @@ EOF
 """
 import pytest
 
-from app.models import Material, Finding, Indicator
+from app.models import SessionLocal, Base, engine, Material, Finding, Indicator
+
+
+@pytest.fixture
+def db_session():
+    """每测独立 session；跑完清空 Finding/Material/Indicator 三表，避免跨测污染。"""
+    Base.metadata.create_all(engine)
+    s = SessionLocal()
+    try:
+        yield s
+    finally:
+        s.rollback()
+        s.query(Finding).delete()
+        s.query(Material).delete()
+        s.query(Indicator).delete()
+        s.commit()
+        s.close()
 
 
 def _seed_indicators(db):
     """建 I-44 合同制度 + I-45 合同岗位分离两条。"""
-    from app.scripts.rebind_wrong_bindings_v28 import find_wrong_bindings  # noqa
     i44 = Indicator(indicator_code="I-44", name="合同制度",
                     category="（六）合同控制", subcategory="（六）合同控制",
                     required_materials="[]")
@@ -351,14 +375,25 @@ def _seed_indicators(db):
     return i44, i45
 
 
+def _seed_task(db):
+    """建一个最小 AuditUnit + AuditTask，返回 task_id 用于 Material.task_id 外键。"""
+    from app.models import AuditUnit, AuditTask
+    u = AuditUnit(name="TEST-U", code="T")
+    db.add(u); db.commit()
+    t = AuditTask(unit_id=u.id, name="test", eval_year=2025, scope="all")
+    db.add(t); db.commit()
+    return t.id
+
+
 def test_dry_run_does_not_modify(db_session):
     """dry-run 只报告不改 material.indicator_id。"""
     from app.scripts.rebind_wrong_bindings_v28 import run
     i44, i45 = _seed_indicators(db_session)
+    tid = _seed_task(db_session)
     m = Material(
-        task_id=1, unit_id=1, indicator_id=i44.id,
+        task_id=tid, indicator_id=i44.id,
         file_name="（六）合同控制/合同管理的岗位职责说明书/xx.pdf",
-        file_path="/tmp/xx.pdf",
+        storage_path="/tmp/xx.pdf",
     )
     db_session.add(m)
     db_session.commit()
@@ -463,7 +498,7 @@ def dump_backup(to_fix: list[tuple[Material, Indicator]], path: str) -> None:
         f.write(f"-- v2.8 rebind backup {datetime.now(timezone.utc).isoformat()}\n")
         f.write(f"-- 共 {len(to_fix)} 条\n\n")
         for m, _ in to_fix:
-            f.write(f"UPDATE material SET indicator_id = {m.indicator_id} WHERE id = {m.id};\n")
+            f.write(f"UPDATE materials SET indicator_id = {m.indicator_id} WHERE id = {m.id};\n")
 
 
 def report_impact(to_fix: list[tuple[Material, Indicator]], db: Session) -> None:
@@ -562,14 +597,15 @@ Expected: `PASS`
 在 `compliance-agent/backend/tests/test_rebind_v28.py` 追加：
 
 ```python
-def test_apply_updates_material_indicator(db_session, tmp_path, monkeypatch):
+def test_apply_updates_material_indicator(db_session):
     """--apply 实际改 material.indicator_id。"""
     from app.scripts.rebind_wrong_bindings_v28 import run
     i44, i45 = _seed_indicators(db_session)
+    tid = _seed_task(db_session)
     m = Material(
-        task_id=1, unit_id=1, indicator_id=i44.id,
+        task_id=tid, indicator_id=i44.id,
         file_name="（六）合同控制/合同管理的岗位职责说明书/xx.pdf",
-        file_path="/tmp/xx.pdf",
+        storage_path="/tmp/xx.pdf",
     )
     db_session.add(m)
     db_session.commit()
@@ -584,16 +620,17 @@ def test_apply_syncs_finding_indicator(db_session):
     """--apply 同步改 finding.indicator_id 到新的岗位分离指标。"""
     from app.scripts.rebind_wrong_bindings_v28 import run
     i44, i45 = _seed_indicators(db_session)
+    tid = _seed_task(db_session)
     m = Material(
-        task_id=1, unit_id=1, indicator_id=i44.id,
+        task_id=tid, indicator_id=i44.id,
         file_name="（六）合同控制/合同管理的岗位职责说明书/xx.pdf",
-        file_path="/tmp/xx.pdf",
+        storage_path="/tmp/xx.pdf",
     )
     db_session.add(m)
     db_session.commit()
     f = Finding(
-        task_id=1, unit_id=1, indicator_id=i44.id, material_id=m.id,
-        finding_type="dummy", severity="low", description="test",
+        task_id=tid, indicator_id=i44.id, material_id=m.id,
+        finding_type="完整性", severity="中", description="test",
     )
     db_session.add(f)
     db_session.commit()
@@ -608,10 +645,11 @@ def test_idempotent_second_run_zero(db_session):
     """跑第二遍 matched=0 updated=0。"""
     from app.scripts.rebind_wrong_bindings_v28 import run
     i44, i45 = _seed_indicators(db_session)
+    tid = _seed_task(db_session)
     m = Material(
-        task_id=1, unit_id=1, indicator_id=i44.id,
+        task_id=tid, indicator_id=i44.id,
         file_name="（六）合同控制/合同管理的岗位职责说明书/xx.pdf",
-        file_path="/tmp/xx.pdf",
+        storage_path="/tmp/xx.pdf",
     )
     db_session.add(m)
     db_session.commit()
@@ -626,14 +664,15 @@ def test_non_target_material_untouched(db_session):
     """file_name 不含"岗位" or 不含子类前缀的材料不动。"""
     from app.scripts.rebind_wrong_bindings_v28 import run
     i44, _ = _seed_indicators(db_session)
+    tid = _seed_task(db_session)
     # 场景 A：不含"岗位"
-    m1 = Material(task_id=1, unit_id=1, indicator_id=i44.id,
+    m1 = Material(task_id=tid, indicator_id=i44.id,
                   file_name="（六）合同控制/合同管理制度.pdf",
-                  file_path="/tmp/m1.pdf")
+                  storage_path="/tmp/m1.pdf")
     # 场景 B：含"岗位"但不含子类前缀
-    m2 = Material(task_id=1, unit_id=1, indicator_id=i44.id,
+    m2 = Material(task_id=tid, indicator_id=i44.id,
                   file_name="别的目录/岗位职责说明.pdf",
-                  file_path="/tmp/m2.pdf")
+                  storage_path="/tmp/m2.pdf")
     db_session.add_all([m1, m2])
     db_session.commit()
 
@@ -656,29 +695,10 @@ Expected: 全部 PASS
 - [ ] **Step 7: Full test suite regression**
 
 ```bash
-cd compliance-agent/backend && python -m pytest -x
+cd compliance-agent/backend && python -m pytest tests/test_rebind_v28.py tests/test_v28_second_level_binding.py -v
 ```
 
-Expected: 全 pass。若 `test_rebind_v28.py` 里的 `db_session` fixture 不存在，先看 `conftest.py` fixture 名（通常是 `db` 或 `session`），把 `db_session` 全量改为实际名。如果 conftest 里没有 SQLite 内存 fixture，需要在 `test_rebind_v28.py` 头部加：
-
-```python
-import pytest
-from app.models import SessionLocal, Base
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-
-@pytest.fixture
-def db_session():
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    s = Session()
-    try:
-        yield s
-    finally:
-        s.close()
-```
+Expected: 5 + 4 = 9 tests PASS。若要跑全套 `pytest -x`，可能耗时（e2e 测有真实 TestClient）；本 Task 只需上述两文件回归。
 
 - [ ] **Step 8: Commit**
 
