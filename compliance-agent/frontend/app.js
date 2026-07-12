@@ -1577,6 +1577,55 @@ function _initMaterialSearch() {
       const a = ev.target.closest("a.tw-material-file-link");
       if (a) a.style.textDecoration = "none";
     });
+    // v2.9: 材料文件点击 → 走 fetch+blob 打开/下载（避开无 auth 的 <a href> 新 tab 报 401）
+    tbody.addEventListener("click", async (ev) => {
+      const a = ev.target.closest("a.tw-material-file-link");
+      if (!a) return;
+      ev.preventDefault();
+      // 先同步打开空白 tab（避 Chrome popup blocker）
+      const newTab = window.open("about:blank", "_blank");
+      const href = a.getAttribute("href");
+      const token = localStorage.getItem("audit.token") || "";
+      try {
+        const r = await fetch(href, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!r.ok) {
+          if (newTab) newTab.close();
+          const msg = r.status === 401 ? "请重新登录" : `打开失败 (${r.status}): ${await r.text()}`;
+          if (typeof toast === "function") { toast(msg, "error"); } else { alert(msg); }
+          return;
+        }
+        const blob = await r.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const cd = r.headers.get("Content-Disposition") || "";
+        const isAttachment = cd.trim().toLowerCase().startsWith("attachment");
+        if (isAttachment) {
+          // 下载：关掉空白 tab，触发本地下载
+          if (newTab) newTab.close();
+          const dl = document.createElement("a");
+          dl.href = objUrl;
+          const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+          dl.download = m ? decodeURIComponent(m[1]) : (a.textContent.trim() || "material");
+          document.body.appendChild(dl);
+          dl.click();
+          document.body.removeChild(dl);
+        } else {
+          // 内联预览：把新 tab 指向 blob URL
+          if (newTab) {
+            newTab.location = objUrl;
+          } else {
+            // 弹窗被拦：兜底 iframe/download
+            window.open(objUrl, "_blank");
+          }
+        }
+        // blob URL 60 秒后 revoke（够加载完页面）
+        setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
+      } catch (e) {
+        if (newTab) newTab.close();
+        if (typeof toast === "function") { toast(`打开失败：${e.message}`, "error"); } else { alert(`打开失败：${e.message}`); }
+      }
+    });
   }
   _materialSearchInited = true;
 }
