@@ -28,6 +28,7 @@ def test_second_level_gangwei_binding_contract():
         _fake_ind("I-44", "（六）合同控制", ["合同管理制度"], "合同制度"),
         _fake_ind("I-45", "（六）合同控制", [], "合同岗位分离"),
     ]
+    # I-45 required_materials=[] → candidate keyword 匹配返回 None → 走 second_level 分支
     ind, conf, src = match_indicator_by_path_and_content(
         "某单位/（六）合同控制/合同管理的岗位职责说明书/xx.pdf",
         "xx.pdf",
@@ -46,6 +47,7 @@ def test_second_level_gangwei_budget():
         _fake_ind("I-13", "（一）预算业务控制", ["预算管理制度"], "预算制度"),
         _fake_ind("I-14", "（一）预算业务控制", [], "预算岗位分离"),
     ]
+    # I-14 required_materials=[] → candidate keyword 匹配返回 None → 走 second_level 分支
     ind, conf, src = match_indicator_by_path_and_content(
         "某单位/（一）预算业务控制/预算业务的岗位职责说明书/yy.pdf",
         "yy.pdf",

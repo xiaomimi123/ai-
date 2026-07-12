@@ -329,13 +329,14 @@ def match_indicator_by_path_and_content(
     """v1.5 路径感知匹配，返回 (indicator, confidence, source) 三元组。
 
     confidence: "high" | "medium" | "none"
-    source: "path+keyword" | "path+protocol_fallback" | "keyword_global" | "none"
+    source: "path+keyword" | "path+second_level" | "path+protocol_fallback" | "keyword_global" | "none"
 
     优先级：
     1. 路径含子类 + 文件名/内容命中候选指标关键词 → high / path+keyword
-    2. 路径含子类 + 候选无命中 → 子类制度类指标 → medium / path+protocol_fallback
-    3. 路径无子类 + 全库关键词命中 → medium / keyword_global
-    4. 都不命中 → (None, "none", "none")
+    2. (v2.8) 路径含子类 + 二级文件夹语义命中（岗位分离/制度）→ high / path+second_level
+    3. 路径含子类 + 候选和二级都无命中 → 子类制度类指标 → medium / path+protocol_fallback
+    4. 路径无子类 + 全库关键词命中 → medium / keyword_global
+    5. 都不命中 → (None, "none", "none")
     """
     indicators = list(indicators)
     # 只对目录部分（去除最后的文件名）做子类匹配，避免文件名里的关键词误触发
