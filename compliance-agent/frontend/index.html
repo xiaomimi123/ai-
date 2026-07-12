@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>内控评价智能审核系统</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/styles.css?v=2.7" />
+  <link rel="stylesheet" href="/static/styles.css?v=2.9" />
 </head>
 <body>
 
@@ -379,6 +379,19 @@
                 <button class="btn btn-secondary btn-sm" onclick="runAutoBind()"><span data-icon="refresh"></span><span>AI 自动绑定指标</span></button>
                 <button id="tw-run-btn" class="btn btn-primary"><span data-icon="play"></span><span>触发 AI 核查</span></button>
               </div>
+            </div>
+            <!-- v2.9: 材料搜索 filter bar -->
+            <div class="tw-material-filter" style="display:flex;align-items:center;gap:8px;padding:12px 24px;background:#fafafa;border-bottom:1px solid var(--divider)">
+              <span style="color:#6e6e73">🔍</span>
+              <input id="tw-material-search" type="text"
+                     class="form-control"
+                     placeholder="搜索文件名 / 绑定指标（支持指标编号如 I-45）"
+                     style="flex:1;min-width:200px" />
+              <button type="button" class="btn btn-secondary btn-sm" id="tw-material-search-clear"
+                      title="清空搜索">清空</button>
+              <span id="tw-material-count" style="color:#6e6e73;font-size:13px;white-space:nowrap">
+                共 <strong>0</strong> 份 · 显示 <strong>0</strong> 份
+              </span>
             </div>
             <table class="table">
               <thead><tr>
@@ -1292,7 +1305,7 @@
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
 
-<script src="/static/pinyin_initials.js?v=2.7"></script>
-<script src="/static/app.js?v=2.7"></script>
+<script src="/static/pinyin_initials.js?v=2.9"></script>
+<script src="/static/app.js?v=2.9"></script>
 </body>
 </html>

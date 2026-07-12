@@ -1553,6 +1553,68 @@ function renderRunButton(task, materials) {
   runBtn.style.cursor = runBtn.disabled ? "not-allowed" : "";
 }
 
+// v2.9: 材料表搜索初始化（idempotent，只绑一次事件）
+let _materialSearchInited = false;
+function _initMaterialSearch() {
+  if (_materialSearchInited) return;
+  const searchInput = document.getElementById("tw-material-search");
+  const searchClear = document.getElementById("tw-material-search-clear");
+  if (!searchInput || !searchClear) return;
+  searchInput.addEventListener("input", (ev) => _filterMaterialRows(ev.target.value));
+  searchClear.addEventListener("click", () => {
+    searchInput.value = "";
+    _filterMaterialRows("");
+    searchInput.focus();
+  });
+  _materialSearchInited = true;
+}
+
+// v2.9: 纯 DOM 层过滤材料行 + 更新计数 + 空态
+function _filterMaterialRows(keyword) {
+  const kw = (keyword || "").trim().toLowerCase();
+  const tbody = document.getElementById("tw-materials-tbody");
+  if (!tbody) return;
+  // 空态行不参与匹配，先隔离
+  const emptyHit = tbody.querySelector("tr.tw-material-empty-hit");
+  const rows = Array.from(tbody.querySelectorAll("tr")).filter(r => r !== emptyHit);
+  let shown = 0;
+  rows.forEach(row => {
+    if (!kw) {
+      row.style.display = "";
+      shown++;
+    } else {
+      const haystack = (row.dataset.searchIndex || "").toLowerCase();
+      if (haystack.includes(kw)) {
+        row.style.display = "";
+        shown++;
+      } else {
+        row.style.display = "none";
+      }
+    }
+  });
+  // 更新计数
+  const countEl = document.getElementById("tw-material-count");
+  if (countEl) {
+    countEl.innerHTML = `共 <strong>${rows.length}</strong> 份 · 显示 <strong>${shown}</strong> 份`;
+  }
+  // 空态处理：搜索有关键词但零命中 → 显示；否则隐藏
+  if (kw && shown === 0) {
+    if (emptyHit) {
+      emptyHit.style.display = "";
+    } else {
+      const tr = document.createElement("tr");
+      tr.className = "tw-material-empty-hit";
+      tr.innerHTML = `<td colspan="5" class="empty-state" style="padding:24px">
+        <div>🔍 无匹配材料</div>
+        <div style="font-size:13px;color:#6e6e73;margin-top:4px">试试其他关键词，或清空搜索</div>
+      </td>`;
+      tbody.appendChild(tr);
+    }
+  } else if (emptyHit) {
+    emptyHit.style.display = "none";
+  }
+}
+
 function renderMaterials() {
   const d = State.taskDetail;
   const indSel = document.getElementById("md-indicator");
@@ -1600,10 +1662,20 @@ function renderMaterials() {
       ke.document_number ? `<span class="tag">${esc(ke.document_number)}</span>` : '',
     ].filter(Boolean).join(" ");
     const selectClass = m.indicator_id ? "form-select tw-bind-select" : "form-select tw-bind-select tw-bind-unset";
-    return `<tr>
+    // v2.9: 搜索索引（文件名 + 绑定指标 code + name），拼成 substring 匹配用的 haystack
+    const boundInd = State.indicators.find(i => i.id === m.indicator_id);
+    const bindLabel = boundInd ? `${boundInd.indicator_code} ${boundInd.name}` : "";
+    const searchIdx = `${m.file_name || ""} ${bindLabel}`;
+    return `<tr data-search-index="${esc(searchIdx)}">
       <td><input type="checkbox" class="material-select" data-material-id="${m.id}" /></td>
       <td><span class="code-id">#${pad(m.id)}</span></td>
-      <td style="font-weight:500">${esc(m.file_name)}</td>
+      <td style="font-weight:500;word-break:break-all">
+        <a href="/api/materials/${m.id}/preview" target="_blank" rel="noopener"
+           style="color:#0071e3;text-decoration:none"
+           onmouseover="this.style.textDecoration='underline'"
+           onmouseout="this.style.textDecoration='none'"
+           title="点击在新标签页打开 / 下载">${esc(m.file_name)}</a>
+      </td>
       <td>
         <select class="${selectClass}" data-material-id="${m.id}" style="min-width:240px">
           <option value="">— 未绑定 —</option>
@@ -1631,6 +1703,11 @@ function renderMaterials() {
       } catch (e) { toast("绑定失败：" + e.message, "error"); }
     });
   });
+
+  // v2.9: init 搜索（idempotent）+ tbody 重渲染后复用当前搜索值
+  _initMaterialSearch();
+  const _searchInput = document.getElementById("tw-material-search");
+  _filterMaterialRows(_searchInput ? _searchInput.value : "");
 
   // v2.3：抽独立函数，让 loadTaskWorkspace + 轮询回调都能刷按钮
   renderRunButton(d.task, d.materials);
