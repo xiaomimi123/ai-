@@ -261,6 +261,64 @@ SUBCATEGORY_TO_PROTOCOL_INDICATOR: dict[str, str] = {
     "（六）合同控制":               "I-44",
 }
 
+# ============================================================
+# v2.8：每个业务子类内"语义类别 → 具体指标 code"的映射
+# 用于在二级文件夹名（如"合同管理的岗位职责说明书"）识别到
+# 更具体的指标（岗位分离 vs 制度），修复 52003 份错绑
+# ============================================================
+SUBCATEGORY_INDICATOR_MAP: dict[str, dict[str, str]] = {
+    "（一）预算业务控制":         {"zhidu": "I-13", "gangwei": "I-14"},
+    "（二）收支业务控制":         {"zhidu": "I-20", "gangwei": "I-21"},
+    "（三）政府采购业务控制":     {"zhidu": "I-25", "gangwei": "I-26"},
+    "（四）资产控制":             {"zhidu": "I-32", "gangwei": "I-33"},
+    "（五）建设项目控制":         {"zhidu": "I-37", "gangwei": "I-38"},
+    "（六）合同控制":             {"zhidu": "I-44", "gangwei": "I-45"},
+}
+
+# v2.8：二级文件夹名里的关键词 → 语义类别
+# 顺序敏感：更具体的 keyword 放前面
+SECOND_LEVEL_KEYWORDS: list[tuple[str, str]] = [
+    # 岗位分离类（首要覆盖，71% 错绑）
+    ("岗位职责说明", "gangwei"),
+    ("岗位分离",     "gangwei"),
+    ("岗位职责分工", "gangwei"),
+    # 制度类（跟默认 protocol_fallback 一致，加了兜底稳定性）
+    ("内部控制制度", "zhidu"),
+    ("管理制度",     "zhidu"),
+    ("管理办法",     "zhidu"),
+]
+
+
+def _match_second_level(
+    dir_part: str,
+    subcategory: str,
+    indicators: list,
+) -> Optional[Indicator]:
+    """v2.8：从 dir_part 里识别二级语义（岗位分离 / 制度）→ 该子类特定指标。
+
+    dir_part 结构典型："某单位/（六）合同控制/合同管理的岗位职责说明书"
+    做法：对整个 dir_part 做 keyword contains（一级子类里通常不含 gangwei/zhidu 字样）。
+    命中后查 SUBCATEGORY_INDICATOR_MAP[subcategory][semantic] → 具体 indicator_code。
+    """
+    if not subcategory or not dir_part:
+        return None
+    ind_map = SUBCATEGORY_INDICATOR_MAP.get(_normalize(subcategory))
+    if not ind_map:
+        return None
+    normalized = _normalize(dir_part)
+    for keyword, semantic in SECOND_LEVEL_KEYWORDS:
+        if keyword in normalized:
+            target_code = ind_map.get(semantic)
+            if not target_code:
+                continue
+            target_ind = next(
+                (ind for ind in indicators if ind.indicator_code == target_code),
+                None,
+            )
+            if target_ind:
+                return target_ind
+    return None
+
 
 def match_indicator_by_path_and_content(
     relative_path: str,
@@ -293,6 +351,11 @@ def match_indicator_by_path_and_content(
             hit = match_indicator_by_content(file_name, parsed_text, candidates)
             if hit:
                 return (hit, "high", "path+keyword")
+        # v2.8：二级文件夹语义识别（如"XX业务/岗位职责说明书"→ 岗位分离指标）
+        # 必须放在 protocol_fallback 前，否则会被默认制度指标先抢
+        second_hit = _match_second_level(dir_part, subcategory, indicators)
+        if second_hit:
+            return (second_hit, "high", "path+second_level")
         # v1.8：子类识别成功 → 即使 candidates 为空（如 v1.5 子类的 subcategory
         # 字段在指标库里是空字符串），也通过 protocol_fallback 兜底到对应制度类指标
         protocol_code = SUBCATEGORY_TO_PROTOCOL_INDICATOR.get(_normalize(subcategory))
