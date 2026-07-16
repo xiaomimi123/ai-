@@ -54,6 +54,15 @@ def test_reset_task_for_rerun_clears_findings_and_worksheet(db_session):
     # seed
     u = AuditUnit(name="RESET-U", code="R")
     db_session.add(u); db_session.commit()
+    ind = Indicator(
+        indicator_code="I-01",
+        name="test indicator",
+        category="test",
+        subcategory="test",
+        required_materials="[]",
+    )
+    db_session.add(ind)
+    db_session.commit()
     t = AuditTask(unit_id=u.id, name="reset test", eval_year=2025,
                   scope="all", status="finalized",
                   summary="旧摘要", stats='{"a":1}',
@@ -62,10 +71,10 @@ def test_reset_task_for_rerun_clears_findings_and_worksheet(db_session):
     db_session.add(t); db_session.commit()
     ws = Worksheet(task_id=t.id, status="finalized")
     db_session.add(ws); db_session.commit()
-    ws_row = WorksheetRow(worksheet_id=ws.id, indicator_id=1,
+    ws_row = WorksheetRow(worksheet_id=ws.id, indicator_id=ind.id,
                           original_score=10.0, audited_score=8.0)
     db_session.add(ws_row); db_session.commit()
-    f = Finding(task_id=t.id, indicator_id=1,
+    f = Finding(task_id=t.id, indicator_id=ind.id,
                 finding_type="完整性", severity="中",
                 description="旧疑点")
     db_session.add(f); db_session.commit()

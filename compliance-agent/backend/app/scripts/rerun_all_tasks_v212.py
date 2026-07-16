@@ -15,11 +15,9 @@ import json
 import os
 import time
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.auth import log_action
 from app.llm.deepseek import sum_usage_cost
 from app.models import (
     AuditTask,
@@ -28,7 +26,6 @@ from app.models import (
     SessionLocal,
     Worksheet,
     WorksheetRow,
-    get_db,
 )
 
 DEFAULT_CHECKPOINT = "/app/data/v2.12_rerun_checkpoint.jsonl"
@@ -56,10 +53,12 @@ def _append_checkpoint(path: str, task_id: int, status: str) -> None:
         "status": status,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-    except OSError:
-        pass
+    dirname = os.path.dirname(path)
+    if dirname:
+        try:
+            os.makedirs(dirname, exist_ok=True)
+        except OSError:
+            pass
     with open(path, "a") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
