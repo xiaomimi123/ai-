@@ -632,7 +632,7 @@ def _process_batches(db: Session, task_ids: list[int], args) -> None:
             db.expire_all()
             still = set()
             for tid in pending:
-                t = db.query(AuditTask).get(tid)
+                t = db.get(AuditTask, tid)
                 if not t:
                     _append_checkpoint(args.checkpoint, tid, "missing")
                     total_processed += 1
