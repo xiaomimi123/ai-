@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>内控评价智能审核系统</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/styles.css?v=2.11" />
+  <link rel="stylesheet" href="/static/styles.css?v=2.13" />
 </head>
 <body>
 
@@ -186,6 +186,17 @@
           <div class="card fade-in fade-in-3">
             <div class="section-title">最近任务</div>
             <div id="dash-recent"></div>
+          </div>
+        </div>
+
+        <!-- v2.13: 单位核查进度总览 -->
+        <div class="card mt-6 fade-in fade-in-4">
+          <div class="section-title">单位核查进度总览</div>
+          <div class="text-sm text-muted mb-3">
+            5 档互斥统计（后 4 档相加 = 单位总数）。点数字下方箭头展开对应类别的单位列表。
+          </div>
+          <div id="dash-unit-progress" class="text-sm">
+            <div class="empty-state" style="padding:16px">加载中…</div>
           </div>
         </div>
 
@@ -1317,7 +1328,7 @@
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
 
-<script src="/static/pinyin_initials.js?v=2.11"></script>
-<script src="/static/app.js?v=2.11"></script>
+<script src="/static/pinyin_initials.js?v=2.13"></script>
+<script src="/static/app.js?v=2.13"></script>
 </body>
 </html>

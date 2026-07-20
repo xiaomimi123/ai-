@@ -19,6 +19,7 @@ const State = {
   consoleTab: "llm",
   taskSearchQuery: "",   // v2.1：任务列表搜索关键词（trim + toLowerCase 归一化）
   checkItems: [],        // v2.6：问题清单缓存
+  unitStatsDetailCache: {},  // v2.13：单位核查进度 detail 缓存
 };
 
 // ============================================================
@@ -287,6 +288,8 @@ async function loadDashboard() {
 
     // v2.11: 工作台批量导出按市分组
     renderExportRegion();
+    // v2.13: 单位核查进度总览
+    renderUnitProgressCard();
   } catch (e) { console.error(e); }
 }
 
@@ -364,6 +367,94 @@ async function renderExportRegion() {
     });
   } catch (e) {
     box.innerHTML = `<div class="empty-state" style="padding:16px;color:#b8262b">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+// v2.13: 单位核查进度总览 —— summary + 懒加载 detail
+async function renderUnitProgressCard() {
+  const box = document.getElementById("dash-unit-progress");
+  if (!box) return;
+  try {
+    const s = await api("/dashboard/unit-stats/summary");
+    box.innerHTML = `
+      <div class="unit-progress-stats" style="display:flex;gap:16px;align-items:stretch">
+        ${_upStatBox("total",                     s.total,                     "单位总数",         false)}
+        ${_upStatBox("no_task",                   s.no_task,                   "未建任务",         true)}
+        ${_upStatBox("has_task_no_material",      s.has_task_no_material,      "建任务未上传材料", true)}
+        ${_upStatBox("in_progress_with_material", s.in_progress_with_material, "有材料未完成",     true)}
+        ${_upStatBox("completed",                 s.completed,                 "已完成核查",       false)}
+      </div>
+      <div id="dash-unit-progress-detail" style="margin-top:12px"></div>
+    `;
+    box.querySelectorAll(".unit-progress-toggle").forEach(el => {
+      el.addEventListener("click", () => _toggleUnitProgressDetail(el.dataset.category));
+    });
+  } catch (e) {
+    box.innerHTML = `<div class="empty-state" style="padding:16px;color:#b8262b">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+function _upStatBox(category, count, label, clickable) {
+  const arrow = clickable
+    ? `<span class="unit-progress-toggle" data-category="${esc(category)}" style="cursor:pointer;color:#0071e3;font-size:13px" title="展开单位列表">▼</span>`
+    : "";
+  return `
+    <div style="flex:1;text-align:center;padding:12px;background:#fafafa;border-radius:8px">
+      <div style="font-size:28px;font-weight:600;color:#1d1d1f">${count}</div>
+      <div style="font-size:12px;color:#6e6e73;margin-top:4px">${esc(label)}</div>
+      <div style="margin-top:4px;min-height:18px">${arrow}</div>
+    </div>
+  `;
+}
+
+async function _toggleUnitProgressDetail(category) {
+  const box = document.getElementById("dash-unit-progress-detail");
+  if (!box) return;
+  // 如果当前已展开的就是这个 → 收起
+  if (box.dataset.openCategory === category) {
+    box.innerHTML = "";
+    box.dataset.openCategory = "";
+    return;
+  }
+  box.dataset.openCategory = category;
+  box.innerHTML = `<div class="empty-state" style="padding:8px">加载中…</div>`;
+  try {
+    if (!State.unitStatsDetailCache) State.unitStatsDetailCache = {};
+    let rows = State.unitStatsDetailCache[category];
+    if (!rows) {
+      rows = await api(`/dashboard/unit-stats/detail?category=${encodeURIComponent(category)}`);
+      State.unitStatsDetailCache[category] = rows;
+    }
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty-state" style="padding:8px">该类别下无单位</div>`;
+      return;
+    }
+    const showProgress = category !== "no_task";
+    const showMaterial = category === "in_progress_with_material";
+    box.innerHTML = `
+      <table class="table table-compact">
+        <thead>
+          <tr>
+            <th style="width:60px">编号</th>
+            <th>单位名称</th>
+            ${showProgress ? '<th style="width:120px">任务进度</th>' : ''}
+            ${showMaterial ? '<th style="width:100px">材料数</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td><span class="code-id">#${r.id}</span></td>
+              <td>${esc(r.name)}</td>
+              ${showProgress ? `<td>${r.finalized_tasks} / ${r.total_tasks}</td>` : ''}
+              ${showMaterial ? `<td>${r.material_count}</td>` : ''}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  } catch (e) {
+    box.innerHTML = `<div class="empty-state" style="padding:8px;color:#b8262b">加载失败：${esc(e.message)}</div>`;
   }
 }
 
