@@ -50,6 +50,8 @@ docker compose exec backend python -m app.init_db
 
 ## 更新日志（部分）
 
+- **v2.13（2026-07-20）**：工作台加"单位核查进度总览"card，5 档互斥统计（单位总数 / 未建任务 / 建任务未上传材料 / 有材料未完成 / 已完成核查）。点中间 3 档 ▼ 展开单位列表（懒加载 + State 缓存）。新端点 `/api/dashboard/unit-stats/summary` 和 `/detail?category=X`。详见 `docs/superpowers/plans/2026-07-20-dashboard-unit-progress-overview.md`
+- **v2.12（2026-07-16）**：全量任务重跑 + 自动定稿脚本 `app/scripts/rerun_all_tasks_v212.py`。DeepSeek 客户端加 LLM usage 埋点（`_log_usage()` 追加 `/app/data/llm_usage.jsonl`），脚本按 ¥500 预算跑，超即停 enqueue。断点续跑（checkpoint jsonl）。**跳过人工复核直接 finalize** —— 已定稿不再等同人工看过。详见 `docs/superpowers/plans/2026-07-16-batch-rerun-all-tasks-auto-finalize.md`
 - **v2.11（2026-07-12）**：工作台加"批量导出已定稿工作底稿"card。后端 `region_parser` 从 `unit.name` 解析（市, 区县），新端点 `/api/exports/region-summary` + `/api/exports/worksheets/city/{city}.zip` 流式打包 xlsx。前端复用 v2.9 fetch+blob 下载模式（携带 Bearer token）。zip 内目录 `<市>/<区县>/<单位>_<年>_<id>.xlsx`；解析失败归"未分类"桶。详见 `docs/superpowers/plans/2026-07-12-batch-export-worksheets-by-region.md`
 - **v2.10（2026-07-12）**：材料审核子 tab 里"内容审核（每份材料关键要素与判定）"面板临时隐藏（`index.html` 里 card 加 `style="display:none"`；后端数据和 JS 渲染保留，下版本恢复只需删一处 style）
 - **v2.9（2026-07-12）**：材料绑定页加即时搜索框（匹配文件名 + 已绑定指标 name/code）+ 文件名点击新 tab 打开预览。前端 fetch+blob 携带 Bearer token（SPA localStorage token + 新 tab 天然不带 auth 的规避方案），复用后端已有的 `GET /api/materials/{id}/preview` 端点。**部署后已打开的旧 tab 需要硬刷（Cmd+Shift+R）加载新 app.js。** 详见 `docs/superpowers/plans/2026-07-12-material-search-and-open.md`
