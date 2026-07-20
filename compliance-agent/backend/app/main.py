@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.audit_routes import findings_router, materials_router, tasks_router, units_router
 from app.api.auth_routes import audit_router, auth_router, users_router
+from app.api.dashboard_routes import dashboard_router
 from app.api.export_routes import exports_router
 from app.api.knowledge_routes import checkitems_router, indicators_router
 from app.api.regulation_routes import regulations_router
@@ -46,6 +47,7 @@ app.include_router(tasks_router)
 app.include_router(findings_router)
 app.include_router(materials_router)
 app.include_router(exports_router)
+app.include_router(dashboard_router)
 
 
 @app.on_event("startup")
