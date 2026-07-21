@@ -290,6 +290,8 @@ async function loadDashboard() {
     renderExportRegion();
     // v2.13: 单位核查进度总览
     renderUnitProgressCard();
+    // v2.14: 地区 × 问题维度分布
+    renderRegionFindingStatsCard();
   } catch (e) { console.error(e); }
 }
 
@@ -455,6 +457,57 @@ async function _toggleUnitProgressDetail(category) {
     `;
   } catch (e) {
     box.innerHTML = `<div class="empty-state" style="padding:8px;color:#b8262b">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+// v2.14: 地区 × 问题维度分布 card
+async function renderRegionFindingStatsCard() {
+  const box = document.getElementById("dash-region-finding-stats");
+  if (!box) return;
+  try {
+    const data = await api("/dashboard/region-finding-stats");
+    const ftypes = data.finding_types;
+    const regions = data.regions;
+    if (!regions.length) {
+      box.innerHTML = `<div class="empty-state" style="padding:16px">暂无地区数据（需先 import unit region）</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div style="overflow-x:auto">
+        <table class="table table-compact">
+          <thead>
+            <tr>
+              <th style="width:100px">地区</th>
+              <th style="width:80px">单位数</th>
+              <th style="width:80px">总findings</th>
+              ${ftypes.map(ft => `<th>${esc(ft)}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${regions.map(r => `
+              <tr>
+                <td><strong>${esc(r.region)}</strong></td>
+                <td>${r.unit_count}</td>
+                <td>${r.total}</td>
+                ${ftypes.map(ft => {
+                  const n = r.counts[ft] || 0;
+                  const pct = r.total > 0 ? (n / r.total * 100) : 0;
+                  return `<td>
+                    <div style="font-weight:600">${n}</div>
+                    <div style="height:4px;background:#eee;border-radius:2px;margin-top:2px">
+                      <div style="height:100%;width:${pct.toFixed(1)}%;background:#0071e3;border-radius:2px"></div>
+                    </div>
+                    <div style="font-size:11px;color:#6e6e73;margin-top:1px">${pct.toFixed(1)}%</div>
+                  </td>`;
+                }).join("")}
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    box.innerHTML = `<div class="empty-state" style="padding:16px;color:#b8262b">加载失败：${esc(e.message)}</div>`;
   }
 }
 
