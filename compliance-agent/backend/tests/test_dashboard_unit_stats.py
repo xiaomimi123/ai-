@@ -171,3 +171,91 @@ def test_detail_rejects_completed_and_unknown_categories(auth_headers):
             headers=auth_headers,
         )
         assert r.status_code == 400
+
+
+def test_region_finding_stats_structure(auth_headers):
+    """/region-finding-stats 返 dict 含 finding_types + regions 两键。"""
+    from app.main import app
+    with TestClient(app) as client:
+        r = client.get(
+            "/api/dashboard/region-finding-stats",
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert "finding_types" in data
+        assert "regions" in data
+        assert isinstance(data["finding_types"], list)
+        assert isinstance(data["regions"], list)
+        # finding_types 至少 6 个（v1.6 _VALID_FINDING_TYPES 定义）
+        assert len(data["finding_types"]) >= 6
+        # 每 region 结构合法
+        for r_ in data["regions"]:
+            assert set(r_.keys()) >= {"region", "unit_count", "counts", "total"}
+
+
+def test_region_finding_stats_counts_findings_correctly(auth_headers):
+    """seed 一个 unit+region+task+finding → 该 region.counts 对应 type=1。"""
+    from app.main import app
+    from app.models import (
+        SessionLocal, AuditUnit, AuditTask, Finding,
+    )
+    with TestClient(app) as client:
+        # 建 unit + region
+        r = client.post("/api/units",
+                        json={"name": "v214-rfs-1", "code": "RFS1"},
+                        headers=auth_headers)
+        assert r.status_code == 200
+        uid = r.json()["id"]
+        with SessionLocal() as s:
+            u = s.get(AuditUnit, uid)
+            u.region = "v214-region-x"
+            s.commit()
+
+        # 建 task
+        r = client.post("/api/tasks",
+                        json={"unit_id": uid, "name": "T_RFS1",
+                              "eval_year": 2025, "scope": "all"},
+                        headers=auth_headers)
+        assert r.status_code == 200
+        tid = r.json()["id"]
+
+        # 直接 seed finding
+        with SessionLocal() as s:
+            f = Finding(task_id=tid, indicator_id=None,
+                        finding_type="真实性问题", severity="中",
+                        description="test finding")
+            s.add(f); s.commit()
+
+        r = client.get(
+            "/api/dashboard/region-finding-stats", headers=auth_headers,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        region_entry = next(
+            (r for r in data["regions"] if r["region"] == "v214-region-x"),
+            None,
+        )
+        assert region_entry is not None
+        assert region_entry["unit_count"] == 1
+        assert region_entry["counts"]["真实性问题"] >= 1
+        assert region_entry["total"] >= 1
+
+
+def test_region_finding_stats_excludes_empty_region_units(auth_headers):
+    """region 为空的 unit 不出现在返回列表。"""
+    from app.main import app
+    with TestClient(app) as client:
+        # 建一个 region 为空的 unit
+        r = client.post("/api/units",
+                        json={"name": "v214-rfs-empty", "code": "EMPTY"},
+                        headers=auth_headers)
+        assert r.status_code == 200
+
+        r = client.get(
+            "/api/dashboard/region-finding-stats", headers=auth_headers,
+        )
+        assert r.status_code == 200
+        regions = r.json()["regions"]
+        # 空 region 不应出现（因为 region == "" 被 filter）
+        assert not any(x["region"] == "" for x in regions)
