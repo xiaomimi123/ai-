@@ -167,6 +167,7 @@ class AuditUnit(Base):
     name: Mapped[str] = mapped_column(String(256), unique=True, index=True)
     code: Mapped[str] = mapped_column(String(64), default="")
     level: Mapped[str] = mapped_column(String(32), default="单位")  # 单位 | 部门
+    region: Mapped[str] = mapped_column(String(32), default="", index=True)  # v2.14 地区
     description: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
