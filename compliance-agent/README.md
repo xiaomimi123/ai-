@@ -50,6 +50,7 @@ docker compose exec backend python -m app.init_db
 
 ## 更新日志（部分）
 
+- **v2.14（2026-07-22）**：`AuditUnit` 加 `region` 字段并从 Excel(5264 单位带地区)import；v2.11 export 改用 `unit.region` 替代正则解析（"未分类"桶从 1 → 0）；工作台加"地区 × 问题维度分布" card，22 行 × 8 列表格（地区 + 单位数 + 总findings + 6 维度，每格 数字/mini bar/百分比）。新端点 `/api/dashboard/region-finding-stats`。详见 `docs/superpowers/plans/2026-07-22-unit-region-and-region-finding-chart.md`
 - **v2.13（2026-07-20）**：工作台加"单位核查进度总览"card，5 档互斥统计（单位总数 / 未建任务 / 建任务未上传材料 / 有材料未完成 / 已完成核查）。点中间 3 档 ▼ 展开单位列表（懒加载 + State 缓存）。新端点 `/api/dashboard/unit-stats/summary` 和 `/detail?category=X`。详见 `docs/superpowers/plans/2026-07-20-dashboard-unit-progress-overview.md`
 - **v2.12（2026-07-16）**：全量任务重跑 + 自动定稿脚本 `app/scripts/rerun_all_tasks_v212.py`。DeepSeek 客户端加 LLM usage 埋点（`_log_usage()` 追加 `/app/data/llm_usage.jsonl`），脚本按 ¥500 预算跑，超即停 enqueue。断点续跑（checkpoint jsonl）。**跳过人工复核直接 finalize** —— 已定稿不再等同人工看过。详见 `docs/superpowers/plans/2026-07-16-batch-rerun-all-tasks-auto-finalize.md`
 - **v2.11（2026-07-12）**：工作台加"批量导出已定稿工作底稿"card。后端 `region_parser` 从 `unit.name` 解析（市, 区县），新端点 `/api/exports/region-summary` + `/api/exports/worksheets/city/{city}.zip` 流式打包 xlsx。前端复用 v2.9 fetch+blob 下载模式（携带 Bearer token）。zip 内目录 `<市>/<区县>/<单位>_<年>_<id>.xlsx`；解析失败归"未分类"桶。详见 `docs/superpowers/plans/2026-07-12-batch-export-worksheets-by-region.md`
