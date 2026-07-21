@@ -1,4 +1,4 @@
-"""v2.11：批量导出已定稿工作底稿（按地区）。
+"""v2.14：批量导出已定稿工作底稿（按地区）。
 
 端点：
 - GET /api/exports/region-summary   → 按市聚合的 finalized 任务统计
@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.models import AuditTask, AuditUnit, User, get_db
-from app.services.region_parser import parse_region
 from app.services.worksheet_export import build_worksheet_xlsx
 from app.services.worksheet_service import get_worksheet
 
@@ -31,9 +30,9 @@ UNCLASSIFIED = "未分类"
 
 
 def _list_finalized_by_city(db: Session) -> list[dict]:
-    """按市聚合 finalized 任务。"""
+    """按市聚合 finalized 任务（v2.14: 直接用 unit.region）。"""
     rows = (
-        db.query(AuditTask, AuditUnit.name)
+        db.query(AuditTask, AuditUnit.name, AuditUnit.region)
         .join(AuditUnit, AuditTask.unit_id == AuditUnit.id)
         .filter(AuditTask.status == "finalized")
         .all()
@@ -41,12 +40,11 @@ def _list_finalized_by_city(db: Session) -> list[dict]:
     grouped: dict[str, dict] = defaultdict(
         lambda: {"task_count": 0, "unit_ids": set(), "unknown": False}
     )
-    for task, unit_name in rows:
-        city, _ = parse_region(unit_name)
-        key = city or UNCLASSIFIED
+    for task, unit_name, region in rows:
+        key = region if region else UNCLASSIFIED
         grouped[key]["task_count"] += 1
         grouped[key]["unit_ids"].add(task.unit_id)
-        if not city:
+        if not region:
             grouped[key]["unknown"] = True
     return [
         {"city": k, "task_count": v["task_count"],
@@ -82,17 +80,17 @@ def download_city_zip(
         raise HTTPException(400, "city 参数必填")
 
     all_rows = (
-        db.query(AuditTask, AuditUnit.name)
+        db.query(AuditTask, AuditUnit.name, AuditUnit.region)
         .join(AuditUnit, AuditTask.unit_id == AuditUnit.id)
         .filter(AuditTask.status == "finalized")
         .all()
     )
     match_rows = []
-    for task, unit_name in all_rows:
-        parsed_city, district = parse_region(unit_name)
-        actual_city = parsed_city or UNCLASSIFIED
+    for task, unit_name, region in all_rows:
+        actual_city = region if region else UNCLASSIFIED
         if actual_city == city:
-            match_rows.append((task, unit_name, district))
+            # v2.14: 不再有区县概念，district 传 None（zip 内会归 "_未分类" 子目录）
+            match_rows.append((task, unit_name, None))
     if not match_rows:
         raise HTTPException(404, f"'{city}' 下无已定稿任务")
 

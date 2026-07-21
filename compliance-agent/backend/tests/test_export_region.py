@@ -1,17 +1,30 @@
-"""v2.11 批量导出（按地区）端点测试。"""
+"""v2.14 批量导出（按地区）端点测试。"""
 import io
 import zipfile
 
 from fastapi.testclient import TestClient
 
 
-def _create_finalized_task(client, headers, unit_name, task_name):
-    """建 unit + task，把 task 直接推到 finalized 状态并生成 worksheet。"""
+def _create_finalized_task(client, headers, unit_name, task_name,
+                           region="达州市"):
+    """v2.14: 加 region 参数（v2.11 靠 name 正则的时代结束）。
+
+    建 unit + task，把 task 直接推到 finalized 状态并生成 worksheet。
+    region 默认"达州市"以匹配大多数现有测试；测未分类桶时传 region=""。
+    """
     r = client.post("/api/units",
                     json={"name": unit_name, "code": "R"},
                     headers=headers)
     assert r.status_code == 200, r.text
     unit_id = r.json()["id"]
+
+    # v2.14: 直接 SQL 设 region（API create 尚不支持 region 字段）
+    from app.models import SessionLocal, AuditUnit
+    with SessionLocal() as s:
+        u = s.get(AuditUnit, unit_id)
+        u.region = region
+        s.commit()
+
     r = client.post("/api/tasks",
                     json={"unit_id": unit_id, "name": task_name,
                           "eval_year": 2025, "scope": "all"},
@@ -19,7 +32,7 @@ def _create_finalized_task(client, headers, unit_name, task_name):
     assert r.status_code == 200, r.text
     task_id = r.json()["id"]
     # 直接改 status + 生成 worksheet（跳 AI 核查，用 DB 直改）
-    from app.models import SessionLocal, AuditTask, Worksheet
+    from app.models import AuditTask, Worksheet
     with SessionLocal() as s:
         t = s.get(AuditTask, task_id)
         t.status = "finalized"
@@ -33,7 +46,8 @@ def test_region_summary_only_finalized(auth_headers):
     """/exports/region-summary 只统计 finalized，其它状态忽略。"""
     from app.main import app
     with TestClient(app) as client:
-        _create_finalized_task(client, auth_headers, "达州市达川区X局_summary1", "T1")
+        _create_finalized_task(client, auth_headers, "达州市达川区X局_summary1", "T1",
+                               region="达州市")
         # 建一个 non-finalized 任务（默认 status=pending）
         client.post("/api/units", json={"name": "非定稿单位_S1", "code": "R"},
                     headers=auth_headers)
@@ -51,7 +65,8 @@ def test_region_summary_unclassified_bucket(auth_headers):
     """无法解析地区的单位归入"未分类"桶，unknown=True。"""
     from app.main import app
     with TestClient(app) as client:
-        _create_finalized_task(client, auth_headers, "某某局_no_region", "T_UNK")
+        _create_finalized_task(client, auth_headers, "某某局_no_region", "T_UNK",
+                               region="")
         r = client.get("/api/exports/region-summary", headers=auth_headers)
         assert r.status_code == 200
         data = r.json()
@@ -67,7 +82,8 @@ def test_download_city_zip_structure(auth_headers, tmp_path):
     with TestClient(app) as client:
         tid = _create_finalized_task(
             client, auth_headers,
-            "四川省达州市达川区试点单位_Z1", "T_Z1"
+            "四川省达州市达川区试点单位_Z1", "T_Z1",
+            region="达州市",
         )
         r = client.get(
             "/api/exports/worksheets/city/%E8%BE%BE%E5%B7%9E%E5%B8%82.zip",
@@ -79,9 +95,9 @@ def test_download_city_zip_structure(auth_headers, tmp_path):
         zbuf = io.BytesIO(r.content)
         with zipfile.ZipFile(zbuf) as zf:
             names = zf.namelist()
-        # 至少一个 entry 路径匹配 达州市/达川区/<...>_2025_<tid>.xlsx
+        # v2.14: 不再细分区县，归入 _未分类 子目录
         matched = [n for n in names
-                   if n.startswith("达州市/达川区/")
+                   if n.startswith("达州市/_未分类/")
                    and n.endswith(f"_2025_{tid}.xlsx")]
         assert matched, f"zip 内未找到期望的 entry；实际 names={names}"
 
@@ -105,6 +121,7 @@ def test_download_city_zip_sanitizes_slash_in_unit_name(auth_headers):
         _create_finalized_task(
             client, auth_headers,
             "达州市达川区a/b单位_slash_test", "T_SLASH",
+            region="达州市",
         )
         r = client.get(
             "/api/exports/worksheets/city/%E8%BE%BE%E5%B7%9E%E5%B8%82.zip",
